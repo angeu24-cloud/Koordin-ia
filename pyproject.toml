@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "koordinia"
+version = "0.1.0"
+description = "Dimensionnement de bâtiments en béton armé (BAEL 91 / Eurocode 2) à partir de plans DWG, DXF et PDF"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "ezdxf>=1.1",
+    "pymupdf>=1.24",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+koordinia = "koordinia.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["koordinia*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
