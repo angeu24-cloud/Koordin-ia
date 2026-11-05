@@ -48,6 +48,55 @@ class FootingResult:
 
 
 @dataclass
+class BalconyResult:
+    """Balcon en console (dalle en porte-à-faux), calcul par mètre linéaire."""
+    floor: str
+    name: str
+    area: float
+    length: float          # porte-à-faux (m)
+    g: float               # kN/m² (permanent moyen du balcon)
+    q: float
+    h: float               # épaisseur retenue (m)
+    mu: float              # moment ELU d'encastrement (kN.m/m)
+    as_top: float          # aciers supérieurs (cm²/m)
+    bars_top: str
+    bars_dist: str         # aciers de répartition
+    notes: list[str] = field(default_factory=list)
+
+
+def balcony_design(code, floor: str, name: str, area: float, L: float, g: float, q: float,
+                   p_gc: float = 1.0, h_gc: float = 1.0, g_fin: float = 1.0) -> BalconyResult:
+    """Console encastrée : charges réparties + garde-corps (poids p_gc kN/m en bout,
+    effort horizontal h_gc kN/m à 1 m de haut)."""
+    import math
+
+    from .codes.common import bar_area
+
+    notes: list[str] = []
+    h = max(0.15, math.ceil(L / 10 * 100) / 100)  # élancement console : h ≥ L/10
+    g_tot = 25 * h + g_fin                         # dalle pleine + revêtement
+    mu = code.elu(g_tot * L ** 2 / 2 + p_gc * L, q * L ** 2 / 2 + h_gc * 1.0)
+    as_top, as_c, n = code.flexure(mu, 1.0, h)
+    notes += n
+    # choix HAd tous les e cm (e ≤ 25 cm, ≥ 10 cm)
+    choice = "—"
+    for d in (8, 10, 12, 14, 16):
+        e = bar_area(d) / as_top if as_top > 0 else 1.0  # m
+        e = min(0.25, math.floor(e * 100) / 100)
+        if e >= 0.10:
+            choice = f"HA{d} e={e * 100:.0f} cm"
+            break
+    dist = max(as_top / 4, 1.2)
+    d_dist = next(d for d in (6, 8, 10) if bar_area(d) / 0.25 >= dist or d == 10)
+    e_dist = min(0.25, math.floor(bar_area(d_dist) / dist * 100) / 100)
+    if L > 2.0:
+        notes.append("Porte-à-faux > 2 m : vérifier la flèche et le contrepoids côté intérieur")
+    if L < 0.3:
+        notes.append("Balcon porté (peu ou pas de porte-à-faux)")
+    return BalconyResult(floor, name, area, L, g_tot, q, h, mu, as_top, choice, f"HA{d_dist} e={e_dist * 100:.0f} cm", notes)
+
+
+@dataclass
 class ProjectResult:
     project: "Project"
     loads: LoadSettings
@@ -57,6 +106,7 @@ class ProjectResult:
     beams: list[BeamResult] = field(default_factory=list)
     columns: list[ColumnResult] = field(default_factory=list)
     footings: list[FootingResult] = field(default_factory=list)
+    balconies: list[BalconyResult] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
     @property
@@ -147,6 +197,18 @@ def run(model, ls: LoadSettings, code, sigma_sol: float = 0.20, max_column: floa
                 if transfer:
                     d.notes.append(f"Poutre de transfert : porte {', '.join(transfer)}")
                 res.beams.append(BeamResult(bid, label, L, 8 * m0 / L ** 2, m0, d, sl.index, transfer))
+
+    # ------------------------------------------------------------------ balcons
+    seen_b: set[tuple] = set()
+    for sl in td.storeys:
+        for z, area, L, g, q in sl.balconies:
+            key = (id(proj.storeys[sl.index].plan), z.name, round(area, 1))
+            if proj.single_plan and key in seen_b:
+                continue
+            seen_b.add(key)
+            floor = "étage courant" if proj.single_plan else sl.floor_name
+            res.balconies.append(balcony_design(code, floor, z.name, area, L, g, q,
+                                                g_fin=z.g_finitions if z.g_finitions is not None else 1.0))
 
     # ------------------------------------------------------------------ poteaux
     for cid, stacks in td.columns.items():

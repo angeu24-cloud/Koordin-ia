@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import ezdxf
+import numpy as np
 from ezdxf.enums import TextEntityAlignment
 
 from ..design import ProjectResult
@@ -27,6 +28,8 @@ LAYERS = {
     "COTATION": (8, "Continuous"),
     "CARTOUCHE": (7, "Continuous"),
     "PLANCHER": (4, "Continuous"),
+    "LOCAUX": (6, "Continuous"),
+    "TREMIES": (1, "Continuous"),
 }
 
 
@@ -118,6 +121,33 @@ def _slab_outline(msp, bld, layer: str = "PLANCHER") -> None:
         msp.add_line((x0, y0), (x1, y1), dxfattribs={"layer": layer})
 
 
+def _draw_zones(msp, bld, roof: bool) -> None:
+    """Contours des locaux à charge particulière (balcons, terrasses, locaux lourds) et trémies."""
+    from ..slab import SlabMask, outline_segments
+
+    for z in bld.zones or []:
+        if roof and z["type"] != "ouverture":
+            continue
+        if z["type"] == "local" and (z.get("q") is None or z.get("usage") == "Bureaux"):
+            continue  # locaux courants : pas de repérage
+        zm = SlabMask.from_dict(z["cells"])
+        layer = "TREMIES" if z["type"] == "ouverture" else "LOCAUX"
+        for x0, y0, x1, y1 in outline_segments(zm):
+            msp.add_line((x0, y0), (x1, y1), dxfattribs={"layer": layer})
+        jj, ii = np.nonzero(zm.mask)
+        if len(jj) == 0:
+            continue
+        xa, xb = zm.x0 + ii.min() * zm.res, zm.x0 + (ii.max() + 1) * zm.res
+        ya, yb = zm.y0 + jj.min() * zm.res, zm.y0 + (jj.max() + 1) * zm.res
+        if z["type"] == "ouverture":
+            msp.add_line((xa, ya), (xb, yb), dxfattribs={"layer": layer})
+            msp.add_line((xa, yb), (xb, ya), dxfattribs={"layer": layer})
+            label = "TRÉMIE"
+        else:
+            label = f"{z['usage']} — Q={z['q']:g} kN/m²" if z.get("q") is not None else z["usage"]
+        _text(msp, (xa + xb) / 2, (ya + yb) / 2 - 0.25, label, 0.11, layer)
+
+
 def _column_section_at(res: ProjectResult, cid: str, storey: int):
     return next(r.design for r in res.columns if r.column_id == cid and r.storey == storey)
 
@@ -144,6 +174,7 @@ def plan_coffrage(res: ProjectResult, path: Path, level: str, storey: int, *, pl
     _axes(msp, res, plan=b)
     _slab_outline(msp, b)
     _draw_columns(msp, res, storey, plan=b)
+    _draw_zones(msp, b, roof=(level == "terrasse" or storey == res.project.n))
     proj = res.project
     # Poteaux de l'étage supérieur qui naissent sur ce plancher
     if not proj.single_plan and storey < proj.n:

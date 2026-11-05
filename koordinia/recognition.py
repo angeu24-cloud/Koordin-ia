@@ -133,6 +133,8 @@ def build_model(
     column_layer: str | None = None,
     footprint: bool = True,
     origin: tuple[float, float] | None = None,
+    rooms: bool = True,
+    usages: list[dict] | None = None,
 ) -> Building:
     """Modèle d'un plan : poteaux, contour du plancher, murs, files, poutres.
 
@@ -168,6 +170,28 @@ def build_model(
         else:
             bld.warnings.append("Contour de plancher non détecté : on utilise les mailles complètes de la trame.")
     bld.walls = detect_walls(drawing, bbox, ox, oy, keep)
+
+    # Locaux étiquetés : usages, trémies, balcons, terrasses (sur la grille du contour)
+    if rooms and mask is not None:
+        from .zones import detect_zones, load_catalogue
+
+        zones, notes = detect_zones(drawing, mask, ox, oy, load_catalogue(usages), keep_layers=keep)
+        bld.zones = zones
+        bld.warnings += notes
+        if zones:
+            counts: dict[str, int] = {}
+            for z in zones:
+                counts[z["usage"]] = counts.get(z["usage"], 0) + 1
+            bld.warnings.append("Locaux reconnus : " + ", ".join(f"{n} × {u}" for u, n in counts.items()) + ".")
+            # balcons et terrasses hors du contour détecté : ajoutés au plancher
+            ext = [z for z in zones if z["type"] in ("balcon",)]
+            if ext:
+                m2 = mask.mask.copy()
+                for z in ext:
+                    m2 |= SlabMask.from_dict(z["cells"]).mask
+                if m2.sum() > mask.mask.sum():
+                    mask = SlabMask(mask.res, mask.x0, mask.y0, m2)
+                    bld.slab = mask.to_dict()
 
     bld.columns = []
     for r in sorted(rects, key=lambda r: (round(r.cy - oy, 1), r.cx)):

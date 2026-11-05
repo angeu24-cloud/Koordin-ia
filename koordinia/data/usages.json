@@ -1,0 +1,25 @@
+{
+  "_aide": "Catalogue des usages de locaux (charges d'exploitation d'après NF P06-001 / NF EN 1991-1-1 AN). Ordre = priorité : la première règle qui correspond au nom du local s'applique. motifs : expressions régulières sur le nom en MAJUSCULES sans accents. q : charge d'exploitation (kN/m², null = celle de l'étage). g_finitions : remplace revêtements + cloisons (kN/m²). g_total : remplace tout le permanent (plancher + finitions). type : ouverture (trémie, retirée du plancher), balcon, exterieur (terrasse/jardin sur dalle), escalier, local.",
+  "usages": [
+    {"nom": "Hall / circulation", "motifs": ["^HALL", "DEGAGEMENT", "CIRCULATION", "COULOIR", "^ENTREE", "PALIER", "SAS\\b"], "q": 2.5, "type": "local"},
+    {"nom": "Trémie ascenseur", "motifs": ["^ASC", "ASCENSEUR", "MONTE.?CHARGE"], "q": 0, "type": "ouverture"},
+    {"nom": "Trémie / gaine / vide", "motifs": ["GAINE", "^VIDE", "\\bVIDE SUR\\b", "TREMIE", "PATIO", "PUITS DE LUMIERE"], "q": 0, "type": "ouverture"},
+    {"nom": "Escalier", "motifs": ["ESCALIER", "^ESC\\b"], "q": 2.5, "g_total": 7.0, "type": "escalier",
+     "note": "paillasse + marches + revêtement en projection horizontale (calcul de l'escalier à part)"},
+    {"nom": "Balcon / loggia", "motifs": ["BALCON", "LOGGIA"], "q": 3.5, "g_finitions": 1.0, "type": "balcon"},
+    {"nom": "Espace vert sur dalle", "motifs": ["ESPACE.? VERT", "JARDIN", "JARDINIERE", "GAZON"], "q": 1.5, "g_finitions": 10.0, "type": "exterieur",
+     "note": "terre végétale ≈ 0,5 m × 18 kN/m³ + drainage : à préciser"},
+    {"nom": "Terrasse accessible", "motifs": ["TERRASSE"], "q": 1.5, "g_finitions": 2.5, "type": "exterieur"},
+    {"nom": "Réservoir / bâche à eau", "motifs": ["BACHE", "RESERVOIR", "CITERNE", "CUVE"], "q": 10.0, "type": "local",
+     "note": "≈ 1 m d'eau : à préciser selon la hauteur d'eau réelle"},
+    {"nom": "Local technique", "motifs": ["LOCAL TECH", "TECHN", "GROUPE", "ELECTROGENE", "CHAUFFERIE", "TGBT", "TRANSFO", "SURPRESSEUR", "\\bCLIM"], "q": 5.0, "type": "local"},
+    {"nom": "Stockage / archives", "motifs": ["STOCK", "ARCHIVE", "RESERVE", "DEPOT", "ENTREPOT", "MAGASIN DE STOCK"], "q": 5.0, "type": "local"},
+    {"nom": "Parking", "motifs": ["PARKING", "GARAGE", "STATIONNEMENT", "BOX\\b"], "q": 2.5, "type": "local"},
+    {"nom": "Commerce", "motifs": ["COMMERCE", "BOUTIQUE", "MAGASIN", "SUPERETTE", "SHOWROOM"], "q": 5.0, "type": "local"},
+    {"nom": "Salle de réunion / restauration", "motifs": ["REUNION", "CONFERENCE", "RESTAURANT", "CANTINE", "AUDITORIUM", "SALLE POLYVALENTE", "SALLE DE CLASSE", "\\bCLASSE\\b"], "q": 4.0, "type": "local"},
+    {"nom": "Bureaux", "motifs": ["BUREAU", "PLATEAU", "OPEN.?SPACE", "SECRETARIAT", "ACCUEIL"], "q": 2.5, "type": "local"},
+    {"nom": "Logement", "motifs": ["CHAMBRE", "SEJOUR", "SALON", "CUISINE", "SALLE A MANGER", "LOGEMENT", "STUDIO", "SDB", "SALLE D.?EAU", "SALLE DE BAIN", "DRESSING", "BUANDERIE"], "q": 1.5, "type": "local"},
+    {"nom": "Sanitaires / vestiaires", "motifs": ["^W\\.?C", "TOILET", "TOIL\\.", "DOUCHE", "SANITAIRE", "VESTI", "LAVABO"], "q": null, "type": "local"},
+    {"nom": "Local ordures", "motifs": ["POUBELLE", "ORDURE", "VIDE.?ORDURE"], "q": 2.5, "type": "local"}
+  ]
+}

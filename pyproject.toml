@@ -19,6 +19,9 @@ dev = ["pytest>=7"]
 [project.scripts]
 koordinia = "koordinia.cli:main"
 
+[tool.setuptools.package-data]
+koordinia = ["data/*.json"]
+
 [tool.setuptools.packages.find]
 include = ["koordinia*"]
 

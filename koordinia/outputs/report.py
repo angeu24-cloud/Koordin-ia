@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import html
+import re
 from datetime import date
 from pathlib import Path
 
@@ -132,6 +133,52 @@ def build_html(res: ProjectResult) -> str:
             out.append(f"<li class='warn'>{e(w)}</li>")
         out.append("</ul>")
 
+    # --- Locaux, usages et trémies
+    rows_done: set = set()
+    loc_html: list[str] = []
+    for sl in td.storeys:
+        plan = proj.storeys[sl.index].plan
+        key = (id(plan), sl.roof)
+        if key in rows_done or (proj.single_plan and not sl.roof and sl.index != proj.n - 2):
+            continue
+        rows_done.add(key)
+        openings = [z for z in (plan.zones or []) if z["type"] == "ouverture"]
+        if not sl.zones and not openings:
+            continue
+        floor = ("Étage courant" if not sl.roof else "Terrasse") if proj.single_plan else sl.floor_name
+        loc_html.append(f"<h3>{e(floor)}</h3><table><tr><th>Local</th><th>Usage retenu</th><th>Surface (m²)</th>"
+                        "<th>Surface écrite (m²)</th><th>G (kN/m²)</th><th>Q (kN/m²)</th><th>Remarque</th></tr>")
+        for z, area, g, q in sl.zones:
+            rem = "contour approché" if z.approx else ""
+            if z.note:
+                rem = (rem + " ; " if rem else "") + z.note
+            loc_html.append(f"<tr><td>{e(z.name)}</td><td>{e(z.usage)}</td><td>{_f(area, 1)}</td>"
+                            f"<td>{_f(z.area_label, 2) if z.area_label else '—'}</td><td>{_f(g, 2)}</td>"
+                            f"<td>{_f(q, 2)}</td><td class='small'>{e(rem)}</td></tr>")
+        for z in openings:
+            loc_html.append(f"<tr><td>{e(z['name'])}</td><td>{e(z['usage'])}</td><td>{_f(z['area'], 1)}</td>"
+                            f"<td>{_f(z['area_label'], 2) if z['area_label'] else '—'}</td><td>—</td><td>—</td>"
+                            "<td class='small'>trémie : retirée du plancher</td></tr>")
+        loc_html.append("</table>")
+    if loc_html:
+        out.append("<h2>3 bis. Locaux, usages et trémies</h2>")
+        out.append(f"<p class='small'>Locaux lus sur les étiquettes du plan et délimités jusqu'aux murs ; charges "
+                   f"d'après le catalogue d'usages (NF P06-001). Hors locaux : G = {_f(td.surface_g_floor, 2)}, "
+                   f"Q = {_f(td.surface_q_floor, 2)} kN/m².</p>")
+        out += loc_html
+    if res.balconies:
+        out.append("<h3>Balcons en console (par mètre linéaire)</h3><table><tr><th>Plancher</th><th>Balcon</th>"
+                   "<th>Surface (m²)</th><th>Porte-à-faux (m)</th><th>Épaisseur (cm)</th><th>G (kN/m²)</th>"
+                   "<th>Q (kN/m²)</th><th>Mu (kN.m/m)</th><th>A sup. (cm²/m)</th><th>Chapeaux</th>"
+                   "<th>Répartition</th><th>Remarque</th></tr>")
+        for bz in res.balconies:
+            out.append(f"<tr><td>{e(bz.floor)}</td><td>{e(bz.name)}</td><td>{_f(bz.area, 1)}</td>"
+                       f"<td>{_f(bz.length, 2)}</td><td>{bz.h * 100:.0f}</td><td>{_f(bz.g, 2)}</td>"
+                       f"<td>{_f(bz.q, 2)}</td><td>{_f(bz.mu, 1)}</td><td>{_f(bz.as_top, 2)}</td><td>{bz.bars_top}</td>"
+                       f"<td>{bz.bars_dist}</td><td class='small'>{e('; '.join(bz.notes))}</td></tr>")
+        out.append("</table><p class='small'>Console encastrée : charges réparties + garde-corps 1 kN/m en bout "
+                   "et effort horizontal 1 kN/m à 1 m ; épaisseur h ≥ L/10 (15 cm mini).</p>")
+
     out.append("<h2>4. Descente de charges sur poteaux</h2>")
     out.append("<table><tr><th>Poteau</th><th>Niveau</th><th>G cumulé (kN)</th><th>Q cumulé (kN)</th>"
                "<th>Nser = G+Q (kN)</th><th>Nu = 1,35G+1,5Q (kN)</th></tr>")
@@ -207,15 +254,43 @@ def write_report(res: ProjectResult, folder: Path) -> tuple[Path, Path]:
     html_path = folder / "note_de_calcul.html"
     html_path.write_text(html_doc, encoding="utf-8")
     pdf_path = folder / "note_de_calcul.pdf"
-    story = pymupdf.Story(html=html_doc)
+    # Mise en page section par section (évite un blocage de PyMuPDF quand un grand tableau
+    # commence en bas de page) ; chaque section reprend sous la précédente.
+    head = html_doc[:html_doc.index("<body>") + 6]
+    body = html_doc[html_doc.index("<body>") + 6:html_doc.rindex("</body>")]
+    parts = re.split(r"(?=<h2>)", body)
     writer = pymupdf.DocumentWriter(str(pdf_path))
     mediabox = pymupdf.paper_rect("a4-l")
-    where = mediabox + (36, 36, -36, -36)
-    more = True
-    while more:
-        dev = writer.begin_page(mediabox)
-        more, _ = story.place(where)
-        story.draw(dev)
-        writer.end_page()
+    full = mediabox + (36, 36, -36, -36)
+    dev = writer.begin_page(mediabox)
+    y = full.y0
+    pages = 1
+    for part in parts:
+        if not part.strip():
+            continue
+        story = pymupdf.Story(html=head + part + "</body></html>")
+        more, stalled = True, 0
+        while more:
+            if full.y1 - y < 60:
+                writer.end_page()
+                dev = writer.begin_page(mediabox)
+                pages += 1
+                y = full.y0
+            where = pymupdf.Rect(full.x0, y, full.x1, full.y1)
+            more, filled = story.place(where)
+            story.draw(dev)
+            fr = pymupdf.Rect(filled)
+            if more:
+                stalled = stalled + 1 if (fr.is_empty or fr.height < 1) else 0
+                writer.end_page()
+                dev = writer.begin_page(mediabox)
+                pages += 1
+                y = full.y0
+                if stalled >= 3 or pages >= 400:
+                    res.warnings.append("Note PDF incomplète (élément trop grand pour une page) : voir la version HTML.")
+                    more = False
+            else:
+                y = (fr.y1 if not fr.is_empty else y) + 8
+    writer.end_page()
     writer.close()
     return html_path, pdf_path

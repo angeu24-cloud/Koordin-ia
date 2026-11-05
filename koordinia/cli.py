@@ -36,6 +36,9 @@ def _add_import_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--hauteurs", help="Hauteurs imposées, ex. « RDC=3.29,RDJ=3.40 » (m)")
     p.add_argument("--liste-niveaux", help="Liste des niveaux si les coupes n'en donnent pas, "
                                           "ex. « RDC,ETAGE 1,ETAGE 2,TERRASSE »")
+    p.add_argument("--sans-locaux", action="store_true",
+                   help="Ne pas lire les locaux (usages, trémies, balcons) : charges uniformes")
+    p.set_defaults(usages=None)
     p.add_argument("--config", help="Fichier de configuration du projet (koordinia.json, voir « koordinia init »)")
     p.add_argument("-o", "--sortie", default="resultats", help="Dossier de sortie")
 
@@ -77,6 +80,11 @@ CONFIG_TEMPLATE = {
         "degression": True,
     },
     "sol": {"_aide": "contrainte admissible ELS (MPa), d'après le rapport géotechnique", "sol": 0.20},
+    "usages": {
+        "_aide": ("Règles d'usage propres au projet, prioritaires sur le catalogue koordinia/data/usages.json. "
+                  "Exemple : {\"nom\": \"Salle serveurs\", \"motifs\": [\"SERVEUR\"], \"q\": 7.5, \"type\": \"local\"}"),
+        "regles": [],
+    },
 }
 
 _PATH_KEYS = ("plan", "modele", "sortie")
@@ -86,6 +94,9 @@ def _flatten(cfg: dict) -> dict:
     out = {}
     for k, v in cfg.items():
         if k.startswith("_"):
+            continue
+        if k == "usages" and isinstance(v, dict):
+            out["usages"] = v.get("regles") or None
             continue
         if isinstance(v, dict):
             out.update(_flatten(v))
@@ -179,7 +190,7 @@ def _import_project(args):
         drawing, overrides=_parse_map(args.affectation, int), heights=_parse_map(args.hauteurs, float),
         levels_spec=[n.strip() for n in args.liste_niveaux.split(",")] if args.liste_niveaux else None,
         column_layer=args.calque_poteaux, max_span=args.portee_max, footprint=not args.sans_contour,
-        default_height=args.hauteur,
+        default_height=args.hauteur, rooms=not args.sans_locaux, usages=args.usages,
     )
     return proj, drawing
 
@@ -238,7 +249,8 @@ def _import_model(args) -> tuple[Building, object | None]:
             + "\n".join(f"  {s.index}. {s.title}" for s in sheets)
         )
     bld = build_model(drawing, n_levels=args.niveaux, floor_height=args.hauteur, max_span=args.portee_max,
-                      column_layer=args.calque_poteaux, footprint=not args.sans_contour)
+                      column_layer=args.calque_poteaux, footprint=not args.sans_contour,
+                      rooms=not args.sans_locaux, usages=args.usages)
     return bld, drawing
 
 

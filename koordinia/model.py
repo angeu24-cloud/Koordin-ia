@@ -73,6 +73,7 @@ class Building:
     axis_x: list[str] = field(default_factory=list)   # repères des files selon X (lus sur le plan)
     axis_y: list[str] = field(default_factory=list)
     walls: list[list[float]] = field(default_factory=list)  # murs [x0, y0, x1, y1, épaisseur]
+    zones: list[dict] = field(default_factory=list)          # locaux (voir zones.Zone), sur la grille de `slab`
 
     # ------------------------------------------------------------------ helpers
     def column_map(self) -> dict[str, Column]:
@@ -102,6 +103,7 @@ class Building:
             axis_x=d.get("axis_x", []),
             axis_y=d.get("axis_y", []),
             walls=d.get("walls", []),
+            zones=d.get("zones", []),
         )
 
     def save(self, path: str | Path) -> None:

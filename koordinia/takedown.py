@@ -23,6 +23,7 @@ import numpy as np
 
 from .model import Beam, Building, LoadSettings
 from .slab import SlabMask, mask_from_rects
+from .zones import cell_loads, zone_objects
 
 CONCRETE = 25.0  # kN/m³
 N_BINS = 60      # discrétisation des poutres pour le calcul des moments
@@ -80,6 +81,8 @@ class StoreyLoads:
     direct_area: dict[str, float] = field(default_factory=dict)
     slab_area: float = 0.0
     point_loads: dict[str, list[tuple[float, float, float, str]]] = field(default_factory=dict)  # poutre → (t, G, Q, poteau)
+    zones: list[tuple] = field(default_factory=list)       # (zone, surface, G moyen, Q moyen)
+    balconies: list[tuple] = field(default_factory=list)   # (zone, surface, porte-à-faux, G, Q)
 
 
 @dataclass
@@ -164,8 +167,13 @@ def slab_mask(bld: Building) -> SlabMask | None:
     return mask_from_rects(rects) if rects else None
 
 
-def distribute(bld: Building, mask: SlabMask, floor_type: str) -> tuple[dict[str, _UnitBeam], dict[str, float]]:
-    """Répartit une charge surfacique unitaire entre poutres et poteaux."""
+def distribute(bld: Building, mask: SlabMask, floor_type: str, weights: list[np.ndarray] | None = None):
+    """Répartit les charges du plancher entre poutres et poteaux.
+
+    Sans `weights` : charge surfacique unitaire → (poutres, poteaux).
+    Avec `weights` (charge par cellule, kN/m², dans l'ordre de `mask.centers()`) :
+    une paire (poutres, poteaux) par jeu de poids.
+    """
     cols = bld.column_map()
     cx, cy = mask.centers()
     a = mask.res ** 2
@@ -220,41 +228,48 @@ def distribute(bld: Building, mask: SlabMask, floor_type: str) -> tuple[dict[str
     near = rest & np.isfinite(d_min) & (d_min <= 3.0)
     choice[near] = stack_i[k_min[near], np.nonzero(near)[0]]
 
-    unit: dict[str, _UnitBeam] = {b.id: _UnitBeam() for b in beams}
-    for k, b in enumerate(beams):
-        sel = choice == k
-        if not sel.any():
-            continue
-        lo, hi = geo[k]
-        L = hi - lo
-        t = (cx[sel] if b.direction == "X" else cy[sel]) - lo
-        c1 = cols[b.start]
-        start_is_lo = (c1.x if b.direction == "X" else c1.y) <= lo + 1e-9
-        area = float(a * sel.sum())
-        r_hi = float(a * t.sum() / L)
-        r_lo = area - r_hi
-        # moment maximal (charges ponctuelles regroupées par tranches)
-        hist, edges = np.histogram(t, bins=N_BINS, range=(0, L))
-        loads = hist * a
-        mid = (edges[:-1] + edges[1:]) / 2
-        xs = edges
-        m = r_lo * xs - np.array([np.sum(loads * np.clip(x - mid, 0, None)) for x in xs])
-        ub = unit[b.id]
-        ub.area = area
-        ub.rs, ub.re = (r_lo, r_hi) if start_is_lo else (r_hi, r_lo)
-        ub.m0 = float(m.max())
-
-    # Cellules restantes : poteau le plus proche
-    direct: dict[str, float] = {c.id: 0.0 for c in bld.columns}
     rest = choice < 0
+    nearest = None
     if rest.any() and bld.columns:
         px = np.array([c.x for c in bld.columns])
         py = np.array([c.y for c in bld.columns])
         rx, ry = cx[rest], cy[rest]
         nearest = np.argmin((rx[:, None] - px[None, :]) ** 2 + (ry[:, None] - py[None, :]) ** 2, axis=1)
-        for idx, cnt in zip(*np.unique(nearest, return_counts=True)):
-            direct[bld.columns[idx].id] += float(cnt * a)
-    return unit, direct
+
+    def accumulate(wt: np.ndarray):
+        unit: dict[str, _UnitBeam] = {b.id: _UnitBeam() for b in beams}
+        for k, b in enumerate(beams):
+            sel = choice == k
+            if not sel.any():
+                continue
+            lo, hi = geo[k]
+            L = hi - lo
+            t = (cx[sel] if b.direction == "X" else cy[sel]) - lo
+            w = wt[sel] * a
+            c1 = cols[b.start]
+            start_is_lo = (c1.x if b.direction == "X" else c1.y) <= lo + 1e-9
+            total = float(w.sum())
+            r_hi = float((w * t).sum() / L)
+            r_lo = total - r_hi
+            # moment maximal (charges ponctuelles regroupées par tranches)
+            loads, edges = np.histogram(t, bins=N_BINS, range=(0, L), weights=w)
+            mid = (edges[:-1] + edges[1:]) / 2
+            m = r_lo * edges - np.array([np.sum(loads * np.clip(x - mid, 0, None)) for x in edges])
+            ub = unit[b.id]
+            ub.area = total
+            ub.rs, ub.re = (r_lo, r_hi) if start_is_lo else (r_hi, r_lo)
+            ub.m0 = float(m.max())
+        # Cellules restantes : poteau le plus proche
+        direct: dict[str, float] = {c.id: 0.0 for c in bld.columns}
+        if nearest is not None:
+            wr = wt[rest] * a
+            for idx in np.unique(nearest):
+                direct[bld.columns[idx].id] += float(wr[nearest == idx].sum())
+        return unit, direct
+
+    if weights is None:
+        return accumulate(np.ones(n))
+    return [accumulate(np.asarray(wt, dtype=float)) for wt in weights]
 
 
 def compute_takedown(model, ls: LoadSettings) -> TakedownResult:
@@ -302,18 +317,30 @@ def compute_project(proj, ls: LoadSettings) -> TakedownResult:
     N = proj.n
     cache: dict[int, tuple] = {}
 
-    def unit_of(plan: Building):
-        key = id(plan)
+    def unit_of(plan: Building, roof: bool, g_def: float, q_def: float):
+        key = (id(plan), roof)
         if key not in cache:
             mask = slab_mask(plan)
+            balconies: list[tuple] = []
+            zone_rows: list[tuple] = []
             if mask is None:
-                unit = {b.id: _UnitBeam() for b in plan.beams}
-                direct = {c.id: 0.0 for c in plan.columns}
+                empty = ({b.id: _UnitBeam() for b in plan.beams}, {c.id: 0.0 for c in plan.columns})
+                parts = [empty, empty, empty]
                 area = 0.0
             else:
-                unit, direct = distribute(plan, mask, ls.floor_type)
-                area = mask.area
-            cache[key] = (unit, direct, area, _edge_beams(plan, mask), beam_lines(plan))
+                eff, g_w, q_w, sels = cell_loads(mask, zone_objects(plan), g_def, q_def, ls.g_floor, roof)
+                emask = SlabMask(mask.res, mask.x0, mask.y0, eff)
+                parts = distribute(plan, emask, ls.floor_type, weights=[g_w, q_w, np.ones(len(g_w))])
+                area = emask.area
+                cx, cy = emask.centers()
+                for z, sel in sels:
+                    zone_rows.append((z, float(sel.sum()) * mask.res ** 2, float(g_w[sel].mean()),
+                                      float(q_w[sel].mean())))
+                    if z.type == "balcon":
+                        balconies.append((z, float(sel.sum()) * mask.res ** 2,
+                                          _cantilever_length(plan, cx[sel], cy[sel]),
+                                          float(g_w[sel].mean()), float(q_w[sel].mean())))
+            cache[key] = (parts, area, _edge_beams(plan, mask), beam_lines(plan), zone_rows, balconies)
         return cache[key]
 
     # charge arrivant en tête de chaque poteau de l'étage courant : id → (G, vecteur Q par plancher)
@@ -327,9 +354,12 @@ def compute_project(proj, ls: LoadSettings) -> TakedownResult:
         roof = s == N - 1
         g_s = res.surface_g_roof if roof else res.surface_g_floor
         q_s = res.surface_q_roof if roof else res.surface_q_floor
-        unit, direct, area, edges, lines = unit_of(plan)
+        parts, area, edges, lines, zone_rows, balconies = unit_of(plan, roof, g_s, q_s)
+        (ug, dg), (uq, dq), (ua, da) = parts
         cols = plan.column_map()
-        sl = StoreyLoads(s, st.name, proj.floor_label(s), roof, lines=lines, direct_area=direct, slab_area=area)
+        sl = StoreyLoads(s, st.name, proj.floor_label(s), roof, lines=lines, direct_area=da, slab_area=area,
+                         zones=zone_rows, balconies=balconies)
+        direct = da
         if area and sum(direct.values()) > 0.05 * area and not (proj.single_plan and s < N - 1):
             res.warnings.append(
                 f"{sl.floor_name} : {sum(direct.values()):.1f} m² de plancher sans poutre en vis-à-vis, reportés "
@@ -368,18 +398,18 @@ def compute_project(proj, ls: LoadSettings) -> TakedownResult:
         beam_q_vec: dict[str, tuple[np.ndarray, np.ndarray]] = {}
         for b in plan.beams:
             L = b.length(cols)
-            u = unit[b.id]
+            u, v = ug[b.id], uq[b.id]
             w = CONCRETE * b.b * b.h
             if not roof and ls.facade_load and b.id in edges:
                 w += ls.facade_load
             bl = BeamLoad(
-                g_tot=g_s * u.area + w * L, q_tot=q_s * u.area,
-                g_m0=g_s * u.m0 + w * L ** 2 / 8, q_m0=q_s * u.m0,
-                g_rs=g_s * u.rs + w * L / 2, g_re=g_s * u.re + w * L / 2,
-                q_rs=q_s * u.rs, q_re=q_s * u.re, trib_area=u.area,
+                g_tot=u.area + w * L, q_tot=v.area,
+                g_m0=u.m0 + w * L ** 2 / 8, q_m0=v.m0,
+                g_rs=u.rs + w * L / 2, g_re=u.re + w * L / 2,
+                q_rs=v.rs, q_re=v.re, trib_area=ua[b.id].area,
             )
             rs_v, re_v = np.zeros(N), np.zeros(N)
-            rs_v[s], re_v[s] = q_s * u.rs, q_s * u.re
+            rs_v[s], re_v[s] = v.rs, v.re
             for t, g, qv, cid in points.get(b.id, []):
                 a, bb = t, L - t
                 qsum = float(qv.sum())
@@ -410,10 +440,10 @@ def compute_project(proj, ls: LoadSettings) -> TakedownResult:
 
         # --- poteaux de l'étage
         new_carried: dict[str, tuple[float, np.ndarray, float, float]] = {}
-        g_col = {c.id: direct[c.id] * g_s + extra_g[c.id] for c in plan.columns}
+        g_col = {c.id: dg[c.id] + extra_g[c.id] for c in plan.columns}
         q_col = {c.id: extra_q[c.id].copy() for c in plan.columns}
         for c in plan.columns:
-            q_col[c.id][s] += direct[c.id] * q_s
+            q_col[c.id][s] += dq[c.id]
         for b in plan.beams:
             bl = sl.beam_loads[b.id]
             rs_v, re_v = beam_q_vec[b.id]
@@ -461,6 +491,25 @@ def compute_project(proj, ls: LoadSettings) -> TakedownResult:
     if ls.q_floor > max(2 * res.surface_g_floor, 5.0):
         res.warnings.append("Q > max(2G ; 5 kN/m²) : la méthode forfaitaire n'est pas applicable.")
     return res
+
+
+def _cantilever_length(plan: Building, x: np.ndarray, y: np.ndarray) -> float:
+    """Porte-à-faux d'un balcon : distance (95e centile) des cellules au nu de la poutre la plus proche."""
+    if len(x) == 0 or not plan.beams:
+        return 0.0
+    cols = plan.column_map()
+    best = np.full(len(x), np.inf)
+    half = np.zeros(len(x))
+    for b in plan.beams:
+        c1, c2 = cols[b.start], cols[b.end]
+        dx, dy = c2.x - c1.x, c2.y - c1.y
+        L2 = dx * dx + dy * dy
+        t = np.clip(((x - c1.x) * dx + (y - c1.y) * dy) / L2, 0, 1)
+        d = np.hypot(x - (c1.x + t * dx), y - (c1.y + t * dy))
+        upd = d < best
+        best[upd] = d[upd]
+        half[upd] = b.b / 2
+    return float(max(0.0, np.percentile(best - half, 95)))
 
 
 def _edge_beams(bld: Building, mask: SlabMask | None) -> set[str]:

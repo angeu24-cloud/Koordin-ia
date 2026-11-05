@@ -119,19 +119,19 @@ def _components(m: np.ndarray, diag: bool = False):
         yield np.array(js), np.array(is_)
 
 
-def mask_from_drawing(
+def wall_raster(
     drawing: Drawing,
     bbox: tuple[float, float, float, float],
     *,
     res: float = 0.10,
-    gap: float = 3.0,
-    min_area: float = 4.0,
     keep_layers: set[str] | None = None,
-) -> SlabMask | None:
-    """Intérieur du bâtiment dans `bbox` (coordonnées du dessin, m).
+    drop_small: float = 1.5,
+    orthogonal_only: bool = False,
+) -> np.ndarray | None:
+    """Grille des traits « bâtis » (murs, menuiseries, garde-corps…) dans `bbox`.
 
-    `gap` : largeur maximale d'une ouverture non dessinée qui sera refermée.
-    `keep_layers` : calques toujours considérés comme structurels (ex. calque des poteaux).
+    Les axes en tirets, cotations, textes et mobilier sont ignorés, ainsi que les petits
+    traits isolés (repères, symboles) de moins de `drop_small` m.
     """
     x0, y0, x1, y1 = bbox
     nx, ny = int((x1 - x0) / res) + 1, int((y1 - y0) / res) + 1
@@ -154,6 +154,8 @@ def mask_from_drawing(
     for s in drawing.segments:
         if s.dashed or excluded(s.layer):
             continue
+        if orthogonal_only and abs(s.x1 - s.x0) > 0.02 and abs(s.y1 - s.y0) > 0.02:
+            continue  # trait en diagonale (croix de trémie, symbole)
         mark_segment(s.x0, s.y0, s.x1, s.y1)
     for r in drawing.rects:
         if excluded(r.layer):
@@ -163,11 +165,33 @@ def mask_from_drawing(
             mark_segment(a, b, c, d)
     if wall.sum() == 0:
         return None
-    # Petits traits isolés (repères d'axes, symboles) : ignorés
-    min_len = int(1.5 / res)
-    for js, is_ in list(_components(wall, diag=True)):
-        if js.max() - js.min() < min_len and is_.max() - is_.min() < min_len:
-            wall[js, is_] = False
+    if drop_small:
+        min_len = int(drop_small / res)
+        for js, is_ in list(_components(wall, diag=True)):
+            if js.max() - js.min() < min_len and is_.max() - is_.min() < min_len:
+                wall[js, is_] = False
+    return wall
+
+
+def mask_from_drawing(
+    drawing: Drawing,
+    bbox: tuple[float, float, float, float],
+    *,
+    res: float = 0.10,
+    gap: float = 3.0,
+    min_area: float = 4.0,
+    keep_layers: set[str] | None = None,
+) -> SlabMask | None:
+    """Intérieur du bâtiment dans `bbox` (coordonnées du dessin, m).
+
+    `gap` : largeur maximale d'une ouverture non dessinée qui sera refermée.
+    `keep_layers` : calques toujours considérés comme structurels (ex. calque des poteaux).
+    """
+    wall = wall_raster(drawing, bbox, res=res, keep_layers=keep_layers)
+    if wall is None:
+        return None
+    x0, y0, x1, y1 = bbox
+    ny, nx = wall.shape
     # 1) Test des 4 directions : un mur à gauche, à droite, en haut et en bas
     right = np.maximum.accumulate(wall[:, ::-1], axis=1)[:, ::-1]
     left = np.maximum.accumulate(wall, axis=1)
@@ -213,39 +237,32 @@ def _drop_small_components(m: np.ndarray, min_cells: int) -> np.ndarray:
 
 
 def outline_segments(m: SlabMask) -> list[tuple[float, float, float, float]]:
-    """Contour du plancher : segments horizontaux/verticaux fusionnés."""
+    """Contour du plancher : segments horizontaux/verticaux fusionnés (calcul vectorisé)."""
     a = m.mask
-    ny, nx = a.shape
+    if not a.any():
+        return []
+    jj, ii = np.nonzero(a)
+    j0, j1, i0, i1 = jj.min(), jj.max() + 1, ii.min(), ii.max() + 1
+    sub = a[j0:j1, i0:i1]
+    ny, nx = sub.shape
     pad = np.zeros((ny + 2, nx + 2), dtype=bool)
-    pad[1:-1, 1:-1] = a
+    pad[1:-1, 1:-1] = sub
     segs: list[tuple[float, float, float, float]] = []
-    # arêtes horizontales : entre lignes j-1 et j
-    h = pad[1:, 1:-1] != pad[:-1, 1:-1]          # (ny+1, nx)
-    for j in range(ny + 1):
-        row = h[j]
-        i = 0
-        while i < nx:
-            if row[i]:
-                k = i
-                while k < nx and row[k]:
-                    k += 1
-                y = m.y0 + j * m.res
-                segs.append((m.x0 + i * m.res, y, m.x0 + k * m.res, y))
-                i = k
-            else:
-                i += 1
-    v = pad[1:-1, 1:] != pad[1:-1, :-1]          # (ny, nx+1)
-    for i in range(nx + 1):
-        col = v[:, i]
-        j = 0
-        while j < ny:
-            if col[j]:
-                k = j
-                while k < ny and col[k]:
-                    k += 1
-                x = m.x0 + i * m.res
-                segs.append((x, m.y0 + j * m.res, x, m.y0 + k * m.res))
-                j = k
-            else:
-                j += 1
-    return segs
+    ox, oy, r = m.x0 + i0 * m.res, m.y0 + j0 * m.res, m.res
+
+    def runs(edges: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Pour chaque ligne de `edges`, débuts et fins des suites de True."""
+        e = np.zeros((edges.shape[0], edges.shape[1] + 2), dtype=np.int8)
+        e[:, 1:-1] = edges
+        d = np.diff(e, axis=1)
+        rs, cs = np.nonzero(d == 1)
+        re_, ce = np.nonzero(d == -1)
+        return rs, cs, ce
+
+    h = pad[1:, 1:-1] != pad[:-1, 1:-1]          # arêtes horizontales (ny+1, nx)
+    rows, st, en = runs(h)
+    segs += [(ox + a_ * r, oy + j * r, ox + b_ * r, oy + j * r) for j, a_, b_ in zip(rows, st, en)]
+    v = (pad[1:-1, 1:] != pad[1:-1, :-1]).T      # arêtes verticales (nx+1, ny)
+    cols, st, en = runs(v)
+    segs += [(ox + i * r, oy + a_ * r, ox + i * r, oy + b_ * r) for i, a_, b_ in zip(cols, st, en)]
+    return [tuple(float(c) for c in sg) for sg in segs]

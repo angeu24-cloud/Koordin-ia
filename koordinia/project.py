@@ -143,6 +143,8 @@ def build_project(
     max_span: float = 8.0,
     footprint: bool = True,
     default_height: float = 3.0,
+    rooms: bool = True,
+    usages: list[dict] | None = None,
 ) -> Project:
     storeys, sheets, notes = plan_storeys(drawing, overrides=overrides, heights=heights,
                                           default_height=default_height, levels_spec=levels_spec)
@@ -178,7 +180,8 @@ def build_project(
             if ratio < 0.3:
                 proj.warnings.append(f"Calage peu fiable pour « {sh.title} » : vérifier le plan de contrôle.")
         models[sh.index] = build_model(sub, origin=(o_ref[0] + t[0], o_ref[1] + t[1]),
-                                       column_layer=column_layer, max_span=max_span, footprint=footprint)
+                                       column_layer=column_layer, max_span=max_span, footprint=footprint,
+                                       rooms=rooms, usages=usages)
 
     # Identifiants globaux : poteaux superposés = même repère P…
     pts = [(c.x, c.y) for sp in storeys for c in models[sp.sheet.index].columns]
@@ -204,6 +207,15 @@ def build_project(
             c.id = global_id(c.x, c.y)
         upper = models[storeys[k + 1].sheet.index] if k + 1 < len(storeys) else base
         plan.slab = upper.slab
+        plan.zones = copy.deepcopy(upper.zones)
+        # Terrasses / espaces verts de l'étage supérieur situés au-dessus de cet étage : dalle à créer
+        if k + 1 < len(storeys) and upper.slab and base.slab:
+            added = _add_exterior_zones(plan, base, upper)
+            if added > 1.0:
+                proj.warnings.append(
+                    f"{floor_name(sp)} : {added:.0f} m² de terrasses / espaces verts de "
+                    f"{display_name(storeys[k + 1].name)} ajoutés au plancher (au-dessus de {display_name(sp.name)})."
+                )
         plan.warnings = [w for w in base.warnings if not w.startswith("Portée")]
         mask = SlabMask.from_dict(plan.slab) if plan.slab else None
         build_frame(plan, mask, max_span=max_span)
@@ -258,6 +270,40 @@ def candidate_resolver(drawing: Drawing, column_layer: str | None = None):
             centers[sh.index] = _column_centers(subs[sh.index], column_layer)
         return subs[sh.index]
     return sub_of, centers
+
+
+def floor_name(sp: StoreyPlan) -> str:
+    return f"Plancher haut {display_name(sp.name)}"
+
+
+def _add_exterior_zones(plan: Building, base: Building, upper: Building) -> float:
+    """Ajoute au plancher les zones extérieures (terrasse, jardin) qui surplombent l'étage `base`."""
+    up = SlabMask.from_dict(upper.slab)
+    own = SlabMask.from_dict(base.slab)
+    m = up.mask.copy()
+    added = 0
+    for z in plan.zones:
+        if z["type"] != "exterieur":
+            continue
+        zm = SlabMask.from_dict(z["cells"])
+        if zm.mask.shape != m.shape:
+            continue
+        cand = zm.mask & ~m
+        if not cand.any():
+            continue
+        jj, ii = np.nonzero(cand)
+        x = up.x0 + (ii + 0.5) * up.res
+        y = up.y0 + (jj + 0.5) * up.res
+        oi = ((x - own.x0) / own.res).astype(int)
+        oj = ((y - own.y0) / own.res).astype(int)
+        ok = (oi >= 0) & (oi < own.mask.shape[1]) & (oj >= 0) & (oj < own.mask.shape[0])
+        over = np.zeros(len(x), dtype=bool)
+        over[ok] = own.mask[oj[ok], oi[ok]]
+        m[jj[over], ii[over]] = True
+        added += int(over.sum())
+    if added:
+        plan.slab = SlabMask(up.res, up.x0, up.y0, m).to_dict()
+    return added * up.res ** 2
 
 
 def sh_title(sp: StoreyPlan) -> str:

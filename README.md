@@ -201,6 +201,32 @@ Principales options de `calculer` (`koordinia calculer -h` pour la liste complè
    Les tests vérifient l'équilibre global (tout ce qui est appliqué arrive aux fondations
    ou aux murs).
 
+## Locaux, usages, trémies et balcons
+
+Les étiquettes de pièces du plan (« Bureau 40,00 m² », « Balcon », « ASC. », « Local
+technique », « Bâche à eau »…) sont lues et classées grâce au **catalogue d'usages**
+`koordinia/data/usages.json`, établi d'après la NF P06-001. Ce catalogue est modifiable,
+et chaque projet peut le compléter dans `koordinia.json` (clé `usages.regles`).
+
+| Type | Exemples | Traitement |
+|---|---|---|
+| Trémie | ascenseur, gaine, vide, patio | retirée du plancher (la croix du symbole est ignorée) |
+| Escalier | escalier | G = 7 kN/m² en projection (paillasse + marches), Q = 2,5 |
+| Balcon | balcon, loggia | dalle pleine, Q = 3,5, **calcul en console** (porte-à-faux, h ≥ L/10, chapeaux) |
+| Extérieur | terrasse, espace vert | ajouté au plancher s'il surplombe l'étage inférieur ; terre comptée pour les jardins |
+| Local | bureaux 2,5 · logement 1,5 · stockage / technique 5 · commerce 5 · bâche à eau 10… | charge du local |
+
+- **Délimitation** : remplissage depuis l'étiquette jusqu'aux murs, portes refermées. La
+  surface obtenue est comparée à la surface écrite. Les locaux découpés (marches,
+  garde-corps) ou ouverts sont approchés par leur surface écrite, et signalés.
+- **Charges** : chaque cellule du plancher porte la charge de son local. La descente de
+  charges, la dégression et l'équilibre en tiennent compte. Le permanent des locaux
+  sans usage particulier reste celui de l'étage.
+- **Sorties** : section « Locaux, usages et trémies » et tableau des balcons en console
+  dans la note de calcul ; contours des locaux à charge particulière et des trémies sur
+  les plans de coffrage.
+- Option `--sans-locaux` : désactive la lecture des locaux (charges uniformes).
+
 ## Hypothèses et limites actuelles
 
 - Bâtiment à ossature poteaux-poutres. Sans `--tous-niveaux`, les étages sont supposés
