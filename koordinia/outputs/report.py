@@ -70,6 +70,8 @@ def build_html(res: ProjectResult) -> str:
     e = html.escape
     out: list[str] = [f"<html><head><meta charset='utf-8'><style>{CSS}</style></head><body>"]
     out.append("<h1>Note de calcul — Structure béton armé</h1>")
+    if proj.name:
+        out.append(f"<h2 style='border:none;margin-top:2pt'>{e(proj.name)}</h2>")
     out.append(f"<p class='small'>Koordin-IA — {date.today():%d/%m/%Y} — Source : {e(proj.source)}</p>")
     out.append(
         "<p class='warn'><b>Avertissement :</b> document généré automatiquement à partir d'un modèle "

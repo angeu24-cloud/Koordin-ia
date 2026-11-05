@@ -41,6 +41,7 @@ class Project:
     source: str = ""
     warnings: list[str] = field(default_factory=list)
     single_plan: bool = False   # True : un seul plan répété (mode historique)
+    name: str = ""              # nom du projet (configuration)
 
     @property
     def n(self) -> int:
@@ -68,14 +69,14 @@ class Project:
                 plans[key] = len(plan_list)
                 plan_list.append(st.plan.to_dict())
             storeys.append({"name": st.name, "height": st.height, "sheet": st.sheet, "plan": plans[key]})
-        return {"type": "projet", "source": self.source, "warnings": self.warnings,
+        return {"type": "projet", "name": self.name, "source": self.source, "warnings": self.warnings,
                 "single_plan": self.single_plan, "plans": plan_list, "storeys": storeys}
 
     @classmethod
     def from_dict(cls, d: dict) -> "Project":
         plans = [Building.from_dict(p) for p in d["plans"]]
         st = [Storey(s["name"], s["height"], plans[s["plan"]], s.get("sheet", "")) for s in d["storeys"]]
-        return cls(st, d.get("source", ""), d.get("warnings", []), d.get("single_plan", False))
+        return cls(st, d.get("source", ""), d.get("warnings", []), d.get("single_plan", False), d.get("name", ""))
 
     def save(self, path: str | Path) -> None:
         Path(path).write_text(json.dumps(self.to_dict(), indent=1, ensure_ascii=False), encoding="utf-8")

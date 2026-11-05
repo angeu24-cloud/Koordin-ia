@@ -59,6 +59,41 @@ convertisseurs est installé (sinon, enregistrer le plan en DXF depuis AutoCAD :
    ```
 2. **ODA File Converter** (gratuit) : <https://www.opendesign.com/guestfiles/oda_file_converter>.
 
+## Démarrer un nouveau projet
+
+Chaque projet a son dossier et son fichier `koordinia.json`. Ce fichier contient le plan,
+la norme, les matériaux, les charges, la contrainte du sol et le choix des planches. Les
+calculs sont ainsi reproductibles, archivables, et faciles à relancer après une
+modification d'hypothèse.
+
+```bash
+koordinia init Projets/Immeuble_X --plan plans_archi.dwg --nom "Immeuble X R+4" --norme bael
+#   → Projets/Immeuble_X/koordinia.json   (à compléter : charges, sol…)
+#   → Projets/Immeuble_X/plans/plans_archi.dwg
+
+koordinia niveaux  --config Projets/Immeuble_X/koordinia.json   # contrôle niveaux / planches
+koordinia detecter --config Projets/Immeuble_X/koordinia.json   # modèle + plans de contrôle
+koordinia calculer --config Projets/Immeuble_X/koordinia.json   # → Projets/Immeuble_X/resultats/
+
+# variante : une option en ligne de commande remplace la configuration
+koordinia calculer --config Projets/Immeuble_X/koordinia.json --norme ec2 -o Projets/Immeuble_X/variante_ec2
+```
+
+Extrait de `koordinia.json` :
+
+```json
+{
+  "projet":    { "nom": "Immeuble X R+4", "plan": "plans/plans_archi.dwg", "tous_niveaux": true },
+  "lecture":   { "affectation": null, "hauteurs": "RDC=3.29", "calque_poteaux": null },
+  "reglement": { "norme": "bael", "fc": 25, "fe": 400, "enrobage": 0.03 },
+  "charges":   { "plancher": "corps_creux", "g_plancher": 3.30, "q": 2.5, "q_terrasse": 1.5, "facade": 7.0 },
+  "sol":       { "sol": 0.20 }
+}
+```
+
+La configuration utilisée est recopiée dans `resultats/resultats.json`, ce qui assure la
+traçabilité de chaque calcul.
+
 ## Utilisation
 
 ```bash

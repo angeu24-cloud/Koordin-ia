@@ -36,7 +36,127 @@ def _add_import_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--hauteurs", help="Hauteurs imposées, ex. « RDC=3.29,RDJ=3.40 » (m)")
     p.add_argument("--liste-niveaux", help="Liste des niveaux si les coupes n'en donnent pas, "
                                           "ex. « RDC,ETAGE 1,ETAGE 2,TERRASSE »")
+    p.add_argument("--config", help="Fichier de configuration du projet (koordinia.json, voir « koordinia init »)")
     p.add_argument("-o", "--sortie", default="resultats", help="Dossier de sortie")
+
+
+# ----------------------------------------------------------------------------- configuration projet
+CONFIG_TEMPLATE = {
+    "_aide": ("Configuration Koordin-IA d'un projet. Les chemins sont relatifs à ce fichier. "
+              "Une option donnée en ligne de commande remplace la valeur d'ici. null = automatique."),
+    "projet": {
+        "nom": "Nom du projet",
+        "plan": "plans/plan_architecte.dwg",
+        "sortie": "resultats",
+        "tous_niveaux": True,
+    },
+    "lecture": {
+        "_aide": "planche : numéro ou mots du titre (plan unique) ; affectation : « RDC=3,ETAGE 2=4 » ; "
+                 "hauteurs : « RDC=3.29 » ; liste_niveaux : « RDC,ETAGE 1,TERRASSE » si pas de coupe",
+        "planche": None,
+        "affectation": None,
+        "hauteurs": None,
+        "liste_niveaux": None,
+        "calque_poteaux": None,
+        "echelle": None,
+        "unites": None,
+        "portee_max": 8.0,
+        "niveaux": 1,
+        "hauteur": 3.0,
+    },
+    "reglement": {"norme": "bael", "fc": 25.0, "fe": 400.0, "enrobage": 0.03},
+    "charges": {
+        "_aide": "kN/m² ; plancher : corps_creux ou dalle_pleine ; facade en kN/m sur poutres de rive",
+        "plancher": "corps_creux",
+        "g_plancher": 2.85,
+        "g_revetement": 2.0,
+        "q": 1.5,
+        "g_terrasse": 1.5,
+        "q_terrasse": 1.0,
+        "facade": 0.0,
+        "degression": True,
+    },
+    "sol": {"_aide": "contrainte admissible ELS (MPa), d'après le rapport géotechnique", "sol": 0.20},
+}
+
+_PATH_KEYS = ("plan", "modele", "sortie")
+
+
+def _flatten(cfg: dict) -> dict:
+    out = {}
+    for k, v in cfg.items():
+        if k.startswith("_"):
+            continue
+        if isinstance(v, dict):
+            out.update(_flatten(v))
+        else:
+            out[k.replace("-", "_")] = v
+    return out
+
+
+def apply_config(args, parser: argparse.ArgumentParser, raw: list[str]) -> None:
+    """Complète `args` avec le fichier de configuration (les options explicites priment)."""
+    path = Path(args.config)
+    if not path.exists():
+        raise ValueError(f"Fichier de configuration introuvable : {path}")
+    cfg = _flatten(json.loads(path.read_text(encoding="utf-8")))
+    if "degression" in cfg:
+        cfg["sans_degression"] = not cfg.pop("degression")
+    given: set[str] = set()
+    for action in parser._actions:
+        for opt in action.option_strings:
+            if any(a == opt or a.startswith(opt + "=") for a in raw):
+                given.add(action.dest)
+    positional_plan = getattr(args, "plan", None) is not None
+    for key, val in cfg.items():
+        if key == "nom":
+            args.nom = val
+            continue
+        if not hasattr(args, key) or key in given or val is None:
+            continue
+        if key == "plan" and positional_plan:
+            continue
+        if key in _PATH_KEYS:
+            val = str((path.parent / val).resolve())
+        setattr(args, key, val)
+        if key == "niveaux":
+            args.niveaux_set = True
+        if key == "hauteur":
+            args.hauteur_set = True
+    if "sortie" not in given and "sortie" not in cfg:
+        args.sortie = str(path.parent / "resultats")
+
+
+def cmd_init(args) -> int:
+    folder = Path(args.dossier)
+    folder.mkdir(parents=True, exist_ok=True)
+    cfg_path = folder / "koordinia.json"
+    if cfg_path.exists() and not args.force:
+        print(f"{cfg_path} existe déjà (utilisez --force pour le remplacer).", file=sys.stderr)
+        return 1
+    cfg = json.loads(json.dumps(CONFIG_TEMPLATE))
+    if args.nom:
+        cfg["projet"]["nom"] = args.nom
+    if args.plan:
+        src = Path(args.plan)
+        (folder / "plans").mkdir(exist_ok=True)
+        dst = folder / "plans" / src.name
+        if src.resolve() != dst.resolve():
+            import shutil
+
+            shutil.copyfile(src, dst)
+        cfg["projet"]["plan"] = f"plans/{src.name}"
+    if args.norme:
+        cfg["reglement"]["norme"] = args.norme
+        cfg["reglement"]["fe"] = 500.0 if args.norme == "ec2" else 400.0
+    cfg_path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(f"Projet créé : {folder}")
+    print(f"  - configuration : {cfg_path}  (charges, sol, norme, planches… à compléter)")
+    if args.plan:
+        print(f"  - plan copié    : {folder / 'plans' / Path(args.plan).name}")
+    print(f"Ensuite : koordinia niveaux --config {cfg_path}")
+    print(f"          koordinia calculer --config {cfg_path}")
+    return 0
 
 
 def _parse_map(txt: str | None, cast) -> dict:
@@ -196,6 +316,8 @@ def cmd_calculer(args) -> int:
         degression=not args.sans_degression,
     )
     code = get_code(args.norme, fc=args.fc, fy=args.fe, cover=args.enrobage)
+    if args.nom:
+        proj.name = args.nom
     res = run(proj, ls, code, sigma_sol=args.sol)
 
     col_t, beam_t, foot_t = group_types(res)
@@ -219,7 +341,10 @@ def cmd_calculer(args) -> int:
     files.append(plan_ferraillage(res, out / "plans_ferraillage.dxf", col_t, beam_t, foot_t))
     files += list(write_report(res, out))
 
+    config_used = {k: v for k, v in vars(args).items()
+                   if k not in ("func", "niveaux_set", "hauteur_set", "cmd") and not callable(v)}
     summary = {
+        "projet": proj.name or None,
         "norme": code.name,
         "niveaux": [{"nom": st.name, "hauteur_m": st.height, "planche": st.sheet} for st in proj.storeys],
         "metre": quantities(res),
@@ -235,6 +360,7 @@ def cmd_calculer(args) -> int:
                      for f in res.footings],
         "avertissements": list(dict.fromkeys(res.warnings)),
         "hypotheses_charges": asdict(ls),
+        "configuration": config_used,
     }
     (out / "resultats.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default),
                                         encoding="utf-8")
@@ -337,6 +463,14 @@ def main(argv: list[str] | None = None) -> int:
     _add_import_args(nv)
     nv.set_defaults(func=cmd_niveaux)
 
+    it = sub.add_parser("init", help="Créer le dossier d'un nouveau projet avec son fichier de configuration")
+    it.add_argument("dossier", help="Dossier du projet")
+    it.add_argument("--plan", help="Plan d'architecte à copier dans le projet")
+    it.add_argument("--nom", help="Nom du projet")
+    it.add_argument("--norme", choices=["bael", "ec2"])
+    it.add_argument("--force", action="store_true", help="Remplacer une configuration existante")
+    it.set_defaults(func=cmd_init)
+
     e = sub.add_parser("exemple", help="Générer un plan d'exemple (DXF + PDF)")
     e.add_argument("-o", "--sortie", default="exemple")
     e.set_defaults(func=cmd_exemple)
@@ -345,7 +479,14 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(raw)
     args.niveaux_set = any(a.startswith("--niveaux") for a in raw)
     args.hauteur_set = any(a.startswith("--hauteur") for a in raw)
+    args.nom = getattr(args, "nom", None)
     try:
+        if getattr(args, "config", None):
+            sp = next(a for a in p._actions if isinstance(a, argparse._SubParsersAction))
+            apply_config(args, sp.choices[args.cmd], raw)
+        if args.cmd in ("detecter", "calculer", "planches", "niveaux") and not args.plan \
+                and not getattr(args, "modele", None):
+            raise ValueError("Indiquez un plan (.dwg/.dxf/.pdf), --modele, ou --config koordinia.json")
         return args.func(args)
     except (NotImplementedError, ValueError, RuntimeError) as exc:
         print(f"Erreur : {exc}", file=sys.stderr)

@@ -69,7 +69,10 @@ def _rect(msp, x0, y0, x1, y1, layer):
 def _cartouche(msp, x, y, title: str, res: ProjectResult, subtitle: str = ""):
     _rect(msp, x, y, x + 7.0, y + 1.6, "CARTOUCHE")
     _text(msp, x + 3.5, y + 1.25, title, 0.25, "CARTOUCHE")
-    _text(msp, x + 3.5, y + 0.85, subtitle or f"Règlement : {res.code.name}", 0.14, "CARTOUCHE")
+    sub = subtitle or f"Règlement : {res.code.name}"
+    if res.project.name:
+        sub = f"{res.project.name} — {sub}"
+    _text(msp, x + 3.5, y + 0.85, sub, 0.14, "CARTOUCHE")
     _text(msp, x + 3.5, y + 0.50, f"Source : {Path(res.project.source.split(' (')[0]).name}", 0.12, "CARTOUCHE")
     _text(msp, x + 3.5, y + 0.20, "Koordin-IA — document à vérifier et viser par l'ingénieur structure",
           0.10, "CARTOUCHE")
