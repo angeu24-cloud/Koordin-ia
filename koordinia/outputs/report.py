@@ -179,6 +179,22 @@ def build_html(res: ProjectResult) -> str:
         out.append("</table><p class='small'>Console encastrée : charges réparties + garde-corps 1 kN/m en bout "
                    "et effort horizontal 1 kN/m à 1 m ; épaisseur h ≥ L/10 (15 cm mini).</p>")
 
+    if res.transfers:
+        out.append("<h3>Poutres de transfert créées automatiquement</h3>"
+                   "<table><tr><th>Poutre</th><th>Plancher</th><th>Appuis</th><th>Portée (m)</th>"
+                   "<th>Poteaux portés</th><th>Mu (kN.m)</th><th>Vu (kN)</th><th>Section (cm)</th><th>Inf.</th>"
+                   "<th>Sup.</th><th>Cadres</th><th>État</th></tr>")
+        for t in res.transfers:
+            d = t.design
+            out.append(f"<tr><td>{t.beam_id}</td><td>{e(t.floor)}</td><td>{e(t.supports)}</td>"
+                       f"<td>{_f(t.length, 2)}</td><td>{e(', '.join(t.carried))}</td><td>{_f(t.m0)}</td>"
+                       f"<td>{_f(t.vu)}</td><td>{d.b * 100:.0f}×{d.h * 100:.0f}</td><td>{d.bars_bottom or '—'}</td>"
+                       f"<td>{d.bars_top or '—'}</td><td>{d.stirrups or '—'}</td>"
+                       f"<td>{'OK' if d.ok else '<span class=ko>NON</span>'}</td></tr>")
+        out.append("</table><p class='small'>Poutres isostatiques sous charges ponctuelles des poteaux "
+                   "naissants + poids propre ; appuis = poteaux ou murs de l'étage inférieur. À valider "
+                   "par l'ingénieur (nœuds, flèche, ferraillage des appuis).</p>")
+
     out.append("<h2>4. Descente de charges sur poteaux</h2>")
     out.append("<table><tr><th>Poteau</th><th>Niveau</th><th>G cumulé (kN)</th><th>Q cumulé (kN)</th>"
                "<th>Nser = G+Q (kN)</th><th>Nu = 1,35G+1,5Q (kN)</th></tr>")

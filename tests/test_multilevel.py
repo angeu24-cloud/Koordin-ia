@@ -183,3 +183,39 @@ def test_cli_multilevel(proj_dxf, tmp_path):
     res = run(Project.load(out / "projet.json"), LoadSettings(), get_code("bael"))
     assert any(r.transfer for r in res.beams)
     assert any(f.on_wall for f in res.footings)
+
+
+def test_automatic_transfer_beam(proj_dxf):
+    """Sans poutre sous le poteau central (portées > 7 m non créées), une poutre de transfert
+    est créée entre les deux poteaux alignés les plus proches ; l'équilibre est conservé."""
+    proj = build_project(import_plan(proj_dxf), max_span=7.0)
+    ls = LoadSettings(continuity=False, degression=False)
+    td = compute_takedown(proj, ls)
+    assert len(td.transfers) == 1
+    tb = td.transfers[0]
+    e1 = proj.storeys[1].plan
+    centre = next(c.id for c in e1.columns if (c.x, c.y) == pytest.approx((4, 4), abs=0.05))
+    assert [l[3] for l in tb.loads] == [centre]
+    assert tb.length == pytest.approx(8.0, abs=0.05)
+    assert all(sp[0] == "poteau" for sp in tb.supports)
+    assert tb.loads[0][0] == pytest.approx(4.0, abs=0.05)   # à mi-portée
+
+    g_applied = q_applied = 0.0
+    for k, st in enumerate(proj.storeys):
+        roof = k == proj.n - 1
+        sl = td.storeys[k]
+        g_applied += sl.slab_area * (td.surface_g_roof if roof else td.surface_g_floor)
+        q_applied += sl.slab_area * (td.surface_q_roof if roof else td.surface_q_floor)
+        cols = st.plan.column_map()
+        g_applied += sum(CONCRETE * b.b * b.h * b.length(cols) for b in st.plan.beams)
+        g_applied += sum(CONCRETE * c.b * c.h * st.height for c in st.plan.columns)
+    g_applied += CONCRETE * tb.b * tb.h * tb.length
+    base = [s for v in td.columns.values() for s in v if s.storey == 1]
+    g_out = sum(s.g for s in base) + sum(w.g for w in td.wall_supports)
+    q_out = sum(s.q for s in base) + sum(w.q for w in td.wall_supports)
+    assert g_out == pytest.approx(g_applied, rel=1e-6)
+    assert q_out == pytest.approx(q_applied, rel=1e-6)
+
+    res = run(proj, LoadSettings(), get_code("bael"))
+    assert len(res.transfers) == 1 and res.transfers[0].design.ok
+    assert res.transfers[0].design.h >= 0.80   # portée 8 m, poteau de 2 niveaux

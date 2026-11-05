@@ -97,10 +97,29 @@ class WallSupport:
 
 
 @dataclass
+class TransferBeam:
+    """Poutre de transfert créée sous des poteaux naissants sans appui."""
+    id: str
+    storey: int                 # indice (0 = bas) de l'étage dont le plancher haut la contient
+    floor_name: str
+    direction: str              # « X » ou « Y »
+    supports: list[tuple]       # [(type « poteau »/« mur », repère, x, y), (…)]
+    length: float
+    loads: list[tuple]          # (abscisse depuis l'appui 1, G kN, Q kN, poteau porté)
+    b: float
+    h: float
+    g_m0: float
+    q_m0: float
+    g_r: float                  # réaction maximale G (kN)
+    q_r: float
+
+
+@dataclass
 class TakedownResult:
     storeys: list[StoreyLoads] = field(default_factory=list)          # du bas vers le haut
     columns: dict[str, list[ColumnStorey]] = field(default_factory=dict)
     wall_supports: list[WallSupport] = field(default_factory=list)
+    transfers: list[TransferBeam] = field(default_factory=list)
     surface_g_floor: float = 0.0
     surface_q_floor: float = 0.0
     surface_g_roof: float = 0.0
@@ -370,6 +389,7 @@ def compute_project(proj, ls: LoadSettings) -> TakedownResult:
         extra_g: dict[str, float] = {c.id: 0.0 for c in plan.columns}
         extra_q: dict[str, np.ndarray] = {c.id: np.zeros(N) for c in plan.columns}
         points: dict[str, list[tuple[float, float, np.ndarray, str]]] = {}
+        orphans: list[tuple[str, float, np.ndarray, float, float]] = []
         for cid, (g, qv, x, y) in carried.items():
             if cid in cols:
                 extra_g[cid] += g
@@ -386,13 +406,42 @@ def compute_project(proj, ls: LoadSettings) -> TakedownResult:
                 points.setdefault(bid, []).append((t, g, qv, cid))
                 res.warnings.append(f"Poteau naissant {cid} ({proj.storeys[s + 1].name}) porté par la poutre "
                                     f"{bid} du {sl.floor_name} : POUTRE DE TRANSFERT à étudier.")
-            elif plan.columns:
+            else:
+                orphans.append((cid, g, qv, x, y))
+
+        # --- poutres de transfert automatiques sous les poteaux naissants sans appui
+        if orphans:
+            above = proj.storeys[s + 1].name
+            groups, lost = _plan_transfers(plan, orphans, ls.transfer_max_span)
+            for n_t, (key, items) in enumerate(groups.items(), start=1):
+                tb = _build_transfer(f"T{s + 1}.{n_t}", s, sl.floor_name, key, items, N)
+                res.transfers.append(tb)
+                for (kind, ref, sx, sy), rg, rq in tb._reactions:  # type: ignore[attr-defined]
+                    if kind == "poteau":
+                        extra_g[ref] += rg
+                        extra_q[ref] += rq
+                    elif kind == "poutre":
+                        bm = plan.beam_map()[ref]
+                        c1 = cols[bm.start]
+                        t_on = abs((sy - c1.y) if bm.direction == "Y" else (sx - c1.x))
+                        points.setdefault(ref, []).append((t_on, float(rg), rq.copy(), tb.id))
+                    else:
+                        res.wall_supports.append(WallSupport(f"{tb.id}", s + 1, sx, sy, float(rg), float(rq.sum())))
+                res.warnings.append(
+                    f"Poutre de transfert {tb.id} créée au {sl.floor_name} sous "
+                    f"{', '.join(l[3] for l in tb.loads)} ({above}) : portée {tb.length:.2f} m entre "
+                    f"{tb.supports[0][0]} {tb.supports[0][1]} et {tb.supports[1][0]} {tb.supports[1][1]}."
+                )
+            for cid, g, qv, x, y in lost:
+                if not plan.columns:
+                    continue
                 near = min(plan.columns, key=lambda c: (c.x - x) ** 2 + (c.y - y) ** 2)
                 dist = ((near.x - x) ** 2 + (near.y - y) ** 2) ** 0.5
                 extra_g[near.id] += g
                 extra_q[near.id] += qv
-                res.warnings.append(f"Poteau naissant {cid} ({proj.storeys[s + 1].name}) sans poutre dessous : "
-                                    f"charge reportée sur {near.id} à {dist:.1f} m — structure à revoir.")
+                res.warnings.append(f"Poteau naissant {cid} ({above}) : aucun appui à moins de "
+                                    f"{ls.transfer_max_span:g} m pour une poutre de transfert — charge reportée sur "
+                                    f"{near.id} à {dist:.1f} m — AJOUTER UN POTEAU ou un voile à {proj.storeys[s].name} sous ce poteau.")
 
         # --- charges des poutres
         beam_q_vec: dict[str, tuple[np.ndarray, np.ndarray]] = {}
@@ -491,6 +540,112 @@ def compute_project(proj, ls: LoadSettings) -> TakedownResult:
     if ls.q_floor > max(2 * res.surface_g_floor, 5.0):
         res.warnings.append("Q > max(2G ; 5 kN/m²) : la méthode forfaitaire n'est pas applicable.")
     return res
+
+
+def _side_supports(plan: Building, x: float, y: float, direction: str, tol: float = 0.4) -> dict[int, tuple]:
+    """Appui le plus proche de chaque côté du point, le long d'une direction : poteau aligné
+    ou mur perpendiculaire traversant la ligne. Renvoie {−1/+1: (type, repère, x, y, distance)}."""
+    best: dict[int, tuple] = {}
+
+    def offer(side: int, cand: tuple) -> None:
+        if side not in best or cand[4] < best[side][4]:
+            best[side] = cand
+
+    for c in plan.columns:
+        if direction == "X":
+            if abs(c.y - y) > tol:
+                continue
+            d = c.x - x
+        else:
+            if abs(c.x - x) > tol:
+                continue
+            d = c.y - y
+        if abs(d) >= 0.2:
+            offer(1 if d > 0 else -1, ("poteau", c.id, c.x, c.y, abs(d)))
+    cols = plan.column_map()
+    for bm in plan.beams:  # poutre existante perpendiculaire traversant la ligne
+        c1, c2 = cols[bm.start], cols[bm.end]
+        if direction == "X" and bm.direction == "Y":
+            lo, hi = min(c1.y, c2.y), max(c1.y, c2.y)
+            if lo + 0.1 < y < hi - 0.1:
+                xb = (c1.x + c2.x) / 2
+                d = xb - x
+                if abs(d) >= 0.2:
+                    offer(1 if d > 0 else -1, ("poutre", bm.id, xb, y, abs(d)))
+        elif direction == "Y" and bm.direction == "X":
+            lo, hi = min(c1.x, c2.x), max(c1.x, c2.x)
+            if lo + 0.1 < x < hi - 0.1:
+                yb = (c1.y + c2.y) / 2
+                d = yb - y
+                if abs(d) >= 0.2:
+                    offer(1 if d > 0 else -1, ("poutre", bm.id, x, yb, abs(d)))
+    for k, (x0, y0, x1, y1, t) in enumerate(plan.walls):
+        if direction == "X" and abs(x1 - x0) < 1e-6 and min(y0, y1) - 0.05 <= y <= max(y0, y1) + 0.05:
+            d = x0 - x
+            if abs(d) >= 0.2:
+                offer(1 if d > 0 else -1, ("mur", f"M{k + 1}", x0, y, abs(d)))
+        elif direction == "Y" and abs(y1 - y0) < 1e-6 and min(x0, x1) - 0.05 <= x <= max(x0, x1) + 0.05:
+            d = y0 - y
+            if abs(d) >= 0.2:
+                offer(1 if d > 0 else -1, ("mur", f"M{k + 1}", x, y0, abs(d)))
+    return best
+
+
+def _plan_transfers(plan: Building, orphans: list, max_span: float):
+    """Choisit, pour chaque poteau naissant, la poutre de transfert la plus courte
+    (appuis de part et d'autre, en X ou en Y) ; regroupe les poteaux d'une même poutre."""
+    groups: dict[tuple, list] = {}
+    lost = []
+    for cid, g, qv, x, y in orphans:
+        options = []
+        for direction in ("X", "Y"):
+            sides = _side_supports(plan, x, y, direction)
+            if -1 in sides and 1 in sides:
+                span = sides[-1][4] + sides[1][4]
+                if span <= max_span:
+                    options.append((span, direction, sides[-1], sides[1]))
+        if not options:
+            lost.append((cid, g, qv, x, y))
+            continue
+        span, direction, a, b = min(options, key=lambda o: o[0])
+        key = (direction, a[:4], b[:4])
+        groups.setdefault(key, []).append((cid, g, qv, x, y))
+    return groups, lost
+
+
+def _build_transfer(tid: str, s: int, floor_name: str, key: tuple, items: list, N: int) -> TransferBeam:
+    import math
+
+    direction, A, B = key
+    L = math.hypot(B[2] - A[2], B[3] - A[3])
+    b = 0.40
+    h = max(0.50, math.ceil(L / 10 / 0.05 - 1e-9) * 0.05)
+    w = CONCRETE * b * h
+    loads = []
+    rg_a = rg_b = w * L / 2
+    rq_a, rq_b = np.zeros(N), np.zeros(N)
+    pts_g, pts_q = [], []
+    for cid, g, qv, x, y in items:
+        a = abs((x - A[2]) if direction == "X" else (y - A[3]))
+        a = min(max(a, 0.0), L)
+        loads.append((round(a, 2), float(g), float(qv.sum()), cid))
+        rg_a += g * (L - a) / L
+        rg_b += g * a / L
+        rq_a += qv * (L - a) / L
+        rq_b += qv * a / L
+        pts_g.append((a, g))
+        pts_q.append((a, float(qv.sum())))
+
+    def m_max(pts, wu):
+        xs = sorted({0.0, L / 2, L} | {p[0] for p in pts})
+        ra = sum(P * (L - a) / L for a, P in pts) + wu * L / 2
+        return max(ra * x - sum(P * max(0.0, x - a) for a, P in pts) - wu * x * x / 2 for x in xs)
+
+    tb = TransferBeam(tid, s, floor_name, direction, [A, B], round(L, 3), loads, b, h,
+                      g_m0=float(m_max(pts_g, w)), q_m0=float(m_max(pts_q, 0.0)),
+                      g_r=float(max(rg_a, rg_b)), q_r=float(max(rq_a.sum(), rq_b.sum())))
+    tb._reactions = [(A, rg_a, rq_a), (B, rg_b, rq_b)]  # type: ignore[attr-defined]
+    return tb
 
 
 def _cantilever_length(plan: Building, x: np.ndarray, y: np.ndarray) -> float:

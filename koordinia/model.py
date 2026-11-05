@@ -55,6 +55,7 @@ class LoadSettings:
     facade_load: float = 0.0              # charge linéique de maçonnerie sur poutres de rive (kN/m)
     degression: bool = True               # loi de dégression des charges d'exploitation
     continuity: bool = True               # majoration 10 % / 15 % des poteaux voisins de rive
+    transfer_max_span: float = 12.0       # portée maximale d'une poutre de transfert automatique (m)
 
 
 @dataclass

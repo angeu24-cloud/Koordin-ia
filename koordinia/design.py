@@ -97,6 +97,19 @@ def balcony_design(code, floor: str, name: str, area: float, L: float, g: float,
 
 
 @dataclass
+class TransferResult:
+    beam_id: str
+    floor: str
+    storey: int
+    length: float
+    supports: str
+    carried: list[str]
+    m0: float
+    vu: float
+    design: BeamDesign
+
+
+@dataclass
 class ProjectResult:
     project: "Project"
     loads: LoadSettings
@@ -107,6 +120,7 @@ class ProjectResult:
     columns: list[ColumnResult] = field(default_factory=list)
     footings: list[FootingResult] = field(default_factory=list)
     balconies: list[BalconyResult] = field(default_factory=list)
+    transfers: list[TransferResult] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
     @property
@@ -197,6 +211,27 @@ def run(model, ls: LoadSettings, code, sigma_sol: float = 0.20, max_column: floa
                 if transfer:
                     d.notes.append(f"Poutre de transfert : porte {', '.join(transfer)}")
                 res.beams.append(BeamResult(bid, label, L, 8 * m0 / L ** 2, m0, d, sl.index, transfer))
+
+    # ------------------------------------------------------- poutres de transfert
+    for tb in td.transfers:
+        m0 = code.elu(tb.g_m0, tb.q_m0)
+        vu = code.elu(tb.g_r, tb.q_r)
+        bw, bh = tb.b, tb.h
+        d = code.beam(bw, bh, m0, 0.15 * m0, vu)
+        while (not d.ok or d.as_comp > 0) and bh < 1.50 - 1e-9:
+            bh = round(bh + 0.05, 2)
+            if bh >= 0.90 and bw < 0.60:
+                bw = round(bw + 0.05, 2)
+            extra = 25 * (bw * bh - tb.b * tb.h)
+            d = code.beam(bw, bh, m0 + code.elu(extra, 0) * tb.length ** 2 / 8, 0.15 * m0,
+                          vu + code.elu(extra, 0) * tb.length / 2)
+        d.notes.append("Poutre de transfert créée automatiquement : à valider (appuis, nœuds, flèche)")
+        if not d.ok:
+            res.warnings.append(f"Poutre de transfert {tb.id} : section insuffisante même à "
+                                f"{bw * 100:.0f}×{bh * 100:.0f} cm — revoir la structure.")
+        sup = " – ".join(f"{a[0]} {a[1]}" for a in tb.supports)
+        res.transfers.append(TransferResult(tb.id, tb.floor_name, tb.storey, tb.length, sup,
+                                            [l[3] for l in tb.loads], m0, vu, d))
 
     # ------------------------------------------------------------------ balcons
     seen_b: set[tuple] = set()

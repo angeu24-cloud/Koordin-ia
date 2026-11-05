@@ -175,6 +175,22 @@ def plan_coffrage(res: ProjectResult, path: Path, level: str, storey: int, *, pl
     _slab_outline(msp, b)
     _draw_columns(msp, res, storey, plan=b)
     _draw_zones(msp, b, roof=(level == "terrasse" or storey == res.project.n))
+    for t in res.transfers:
+        if t.storey != storey - 1:
+            continue
+        (_, _, xa, ya), (_, _, xb, yb) = [(a[0], a[1], a[2], a[3]) for a in
+                                          next(tb.supports for tb in res.takedown.transfers if tb.id == t.beam_id)]
+        w = t.design.b / 2
+        if abs(yb - ya) < abs(xb - xa):
+            for off in (-w, w):
+                msp.add_line((xa, ya + off), (xb, ya + off), dxfattribs={"layer": "POUTRES", "color": 1})
+            _text(msp, (xa + xb) / 2, ya - w - 0.15, f"{t.beam_id} ({t.design.b * 100:.0f}x{t.design.h * 100:.0f}) "
+                  "TRANSFERT", 0.13, align=TextEntityAlignment.TOP_CENTER)
+        else:
+            for off in (-w, w):
+                msp.add_line((xa + off, ya), (xa + off, yb), dxfattribs={"layer": "POUTRES", "color": 1})
+            _text(msp, xa + w + 0.15, (ya + yb) / 2, f"{t.beam_id} ({t.design.b * 100:.0f}x{t.design.h * 100:.0f}) "
+                  "TRANSFERT", 0.13, rot=90)
     proj = res.project
     # Poteaux de l'étage supérieur qui naissent sur ce plancher
     if not proj.single_plan and storey < proj.n:
@@ -271,7 +287,11 @@ def group_types(res: ProjectResult) -> tuple[list[ElementType], list[ElementType
         t = col_types.setdefault(key, ElementType(f"PT{len(col_types) + 1}", key, data=d))
         t.members.append(f"{r.column_id}/{r.storey_name or 'N' + str(r.storey)}")
     beam_types: dict[tuple, ElementType] = {}
-    for r in res.beams:
+    from ..design import BeamResult
+
+    extra = [BeamResult(t.beam_id, t.floor, t.length, 8 * t.m0 / t.length ** 2, t.m0, t.design, t.storey)
+             for t in res.transfers]
+    for r in list(res.beams) + extra:
         d = r.design
         key = (d.b, d.h, round(r.span, 2), str(d.bars_bottom), str(d.bars_top), str(d.stirrups))
         t = beam_types.setdefault(key, ElementType(f"PO{len(beam_types) + 1}", key, data=r))
