@@ -64,13 +64,16 @@ def test_scanned_pdf_is_rejected(tmp_path):
         import_plan(f, scale=100)
 
 
-def test_takedown_equilibrium(tmp_path):
+@pytest.mark.parametrize("footprint,area", [(False, 12.5 * 9.0), (True, 13.0 * 9.5)])
+def test_takedown_equilibrium(tmp_path, footprint, area):
     """Sans majoration de continuité ni dégression, Σ réactions = Σ charges appliquées."""
     f = write_sample_dxf(tmp_path / "plan.dxf")
-    bld = build_model(import_plan(f), n_levels=3, floor_height=3.0)
+    bld = build_model(import_plan(f), n_levels=3, floor_height=3.0, footprint=footprint)
     ls = LoadSettings(continuity=False, degression=False)
     td = compute_takedown(bld, ls)
-    area = 12.5 * 9.0
+    # contour = axes (mailles) ou nu extérieur des murs de façade (épaisseur 25 cm au-delà des axes)
+    assert td.slab_area == pytest.approx(area, rel=0.02)
+    area = td.slab_area
     cols = bld.column_map()
     beams_g = sum(25 * b.b * b.h * b.length(cols) for b in bld.beams)
     cols_g = sum(25 * c.b * c.h * 3.0 for c in bld.columns)
@@ -83,10 +86,30 @@ def test_takedown_equilibrium(tmp_path):
 
 def test_dalle_pleine_distribution_balances(tmp_path):
     f = write_sample_dxf(tmp_path / "plan.dxf")
-    bld = build_model(import_plan(f), n_levels=1)
+    bld = build_model(import_plan(f), n_levels=1, footprint=False)
     td = compute_takedown(bld, LoadSettings(floor_type="dalle_pleine", continuity=False))
     q_tot = sum(bl.q_tot for bl in td.roof_loads.values())
     assert q_tot == pytest.approx(12.5 * 9.0 * td.surface_q_roof)
+
+
+def test_raster_matches_classic_load_distribution(tmp_path):
+    """Panneau 4,5 × 4 en corps creux : chaque poutre de 4,5 m reçoit p·2,0 m ; en dalle pleine,
+    trapèze lx/4·(2ly − lx) et M0 conforme à la formule p·lx/2·(1 − ρ²/3)·L²/8."""
+    f = write_sample_dxf(tmp_path / "plan.dxf")
+    bld = build_model(import_plan(f), n_levels=1, footprint=False)
+    cols = bld.column_map()
+    # poutre X centrale entre les files B (y = 5) et C (y = 9), travée 4,5 m (x 4 → 8,5), bord haut du plancher
+    top = next(b for b in bld.beams if b.direction == "X" and cols[b.start].x == pytest.approx(4.0)
+               and cols[b.start].y == pytest.approx(9.0))
+    ls = LoadSettings(continuity=False, q_roof=1.0)
+    td = compute_takedown(bld, ls)
+    assert td.roof_loads[top.id].trib_area == pytest.approx(4.5 * 2.0, rel=0.01)
+    td2 = compute_takedown(bld, LoadSettings(floor_type="dalle_pleine", continuity=False, q_roof=1.0))
+    lx, ly = 4.0, 4.5
+    rho = lx / ly
+    assert td2.roof_loads[top.id].trib_area == pytest.approx(lx / 4 * (2 * ly - lx), rel=0.02)
+    m0_theory = lx / 2 * (1 - rho ** 2 / 3) * ly ** 2 / 8
+    assert td2.roof_loads[top.id].q_m0 == pytest.approx(m0_theory, rel=0.03)
 
 
 @pytest.mark.parametrize("norme", ["bael", "ec2"])

@@ -1,6 +1,10 @@
 """Import des plans AutoCAD (DXF natif, DWG via ODA File Converter)."""
 from __future__ import annotations
 
+import os
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 import ezdxf
@@ -22,17 +26,56 @@ def read_dwg_or_dxf(path: str | Path) -> DxfDocument:
     suffix = path.suffix.lower()
     if suffix == ".dxf":
         return ezdxf.readfile(path)
-    if suffix == ".dwg":
-        from ezdxf.addons import odafc
-
-        if not odafc.is_installed():
-            raise ImportErrorKoordinia(
-                "Lecture DWG impossible : le convertisseur gratuit « ODA File Converter » n'est pas installé.\n"
-                "  - Installez-le : https://www.opendesign.com/guestfiles/oda_file_converter\n"
-                "  - ou, dans AutoCAD : commande ENREGSOUS (SAVEAS) → format DXF, puis relancez avec le .dxf."
-            )
-        return odafc.readfile(str(path))
+    if suffix == ".dwg" or _is_dwg(path):
+        return _read_dwg(path)
     raise ImportErrorKoordinia(f"Format non reconnu : {suffix}")
+
+
+def _is_dwg(path: Path) -> bool:
+    try:
+        with open(path, "rb") as f:
+            return f.read(4) == b"AC10" and path.suffix.lower() != ".dxf"
+    except OSError:
+        return False
+
+
+def find_dwg2dxf() -> str | None:
+    """Convertisseur LibreDWG : variable KOORDINIA_DWG2DXF, sinon `dwg2dxf` dans le PATH."""
+    env = os.environ.get("KOORDINIA_DWG2DXF")
+    if env and Path(env).exists():
+        return env
+    return shutil.which("dwg2dxf")
+
+
+def _read_dwg(path: Path) -> DxfDocument:
+    """Lecture DWG : ODA File Converter si installé, sinon LibreDWG (dwg2dxf)."""
+    from ezdxf.addons import odafc
+
+    if odafc.is_installed():
+        return odafc.readfile(str(path))
+    tool = find_dwg2dxf()
+    if tool:
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "plan.dwg"
+            shutil.copyfile(path, src)
+            dst = Path(tmp) / "plan.dxf"
+            proc = subprocess.run([tool, "-y", "-o", str(dst), str(src)], capture_output=True, text=True,
+                                  timeout=900)
+            if not dst.exists():
+                raise ImportErrorKoordinia(f"Échec de la conversion DWG → DXF par LibreDWG :\n{proc.stderr[-800:]}")
+            try:
+                return ezdxf.readfile(dst)
+            except ezdxf.DXFStructureError:
+                from ezdxf import recover
+
+                doc, _ = recover.readfile(dst)
+                return doc
+    raise ImportErrorKoordinia(
+        "Lecture DWG impossible : aucun convertisseur installé.\n"
+        "  - LibreDWG (libre) : outil « dwg2dxf » dans le PATH, ou variable KOORDINIA_DWG2DXF ;\n"
+        "  - ou ODA File Converter (gratuit) : https://www.opendesign.com/guestfiles/oda_file_converter ;\n"
+        "  - ou, dans AutoCAD : ENREGSOUS (SAVEAS) → format DXF, puis relancez avec le .dxf."
+    )
 
 
 def _unit_factor(doc: DxfDocument, units: str | None) -> tuple[float, str | None]:
@@ -81,7 +124,16 @@ def import_dxf(path: str | Path, units: str | None = None) -> Drawing:
     if warn:
         out.warnings.append(warn)
 
-    def add_poly(pts: list[tuple[float, float]], closed: bool, layer: str, filled: bool = False) -> None:
+    layer_lt = {l.dxf.name.upper(): (l.dxf.get("linetype", "Continuous") or "Continuous").upper() for l in doc.layers}
+
+    def is_dashed(e) -> bool:
+        lt = (e.dxf.get("linetype", "BYLAYER") or "BYLAYER").upper()
+        if lt == "BYLAYER":
+            lt = layer_lt.get(e.dxf.get("layer", "0").upper(), "CONTINUOUS")
+        return lt not in ("CONTINUOUS", "CONTINU", "BYBLOCK", "")
+
+    def add_poly(pts: list[tuple[float, float]], closed: bool, layer: str, filled: bool = False,
+                 dashed: bool = False) -> None:
         pts = [(x * k, y * k) for x, y in pts]
         r = rect_from_points(pts, tol=0.005) if (closed or (len(pts) == 5 and pts[0] == pts[-1])) else None
         if r:
@@ -90,7 +142,7 @@ def import_dxf(path: str | Path, units: str | None = None) -> Drawing:
         n = len(pts)
         for i in range(n - 1 + (1 if closed else 0)):
             a, b = pts[i], pts[(i + 1) % n]
-            out.segments.append(Segment(a[0], a[1], b[0], b[1], layer))
+            out.segments.append(Segment(a[0], a[1], b[0], b[1], layer, dashed))
 
     for e in _iter_entities(doc.modelspace()):
         t = e.dxftype()
@@ -98,13 +150,13 @@ def import_dxf(path: str | Path, units: str | None = None) -> Drawing:
         try:
             if t == "LINE":
                 s, d = e.dxf.start, e.dxf.end
-                out.segments.append(Segment(s.x * k, s.y * k, d.x * k, d.y * k, layer))
+                out.segments.append(Segment(s.x * k, s.y * k, d.x * k, d.y * k, layer, is_dashed(e)))
             elif t == "LWPOLYLINE":
                 pts = [(p[0], p[1]) for p in e.get_points("xy")]
-                add_poly(pts, e.closed, layer)
+                add_poly(pts, e.closed, layer, dashed=is_dashed(e))
             elif t == "POLYLINE":
                 pts = [(v.dxf.location.x, v.dxf.location.y) for v in e.vertices]
-                add_poly(pts, e.is_closed, layer)
+                add_poly(pts, e.is_closed, layer, dashed=is_dashed(e))
             elif t in ("SOLID", "TRACE"):
                 pts = [(e.dxf.get(f"vtx{i}").x, e.dxf.get(f"vtx{i}").y) for i in range(4)]
                 add_poly(pts, True, layer, filled=True)

@@ -71,14 +71,20 @@ def test_ec2_shear_requires_stirrups():
     assert d.ok and d.stirrups.s <= 0.75 * 0.45
 
 
-def test_choose_bars_minimal_area():
+def test_choose_bars_practical():
     b = choose_bars(7.5, n_min=2, n_max=8)
     assert b.area >= 7.5
-    # aucune autre combinaison admissible n'a une section plus petite
+    cands = []
     for d in (10, 12, 14, 16, 20, 25, 32):
         n = max(2, math.ceil(7.5 / bar_area(d)))
         if n <= 8:
-            assert n * bar_area(d) >= b.area - 1e-9
+            cands.append((n, d, n * bar_area(d)))
+    a_min = min(c[2] for c in cands)
+    assert b.area <= 1.10 * a_min + 1e-9
+    # aucune solution à moins de 10 % de l'optimum n'a moins de barres
+    assert all(n >= b.n for n, d, a in cands if a <= 1.10 * a_min + 1e-9)
+    # 11 cm² : 14HA10 (11,0) est écarté au profit d'une solution à moins de barres
+    assert choose_bars(11.0, n_min=2, n_max=16).n < 14
 
 
 def test_cm66_not_yet_available():

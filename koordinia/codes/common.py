@@ -39,20 +39,22 @@ def choose_bars(
     d_max: int = 32,
     even: bool = False,
 ) -> Bars | None:
-    """Plus petite section réelle couvrant As ; à section égale, le moins de barres."""
-    best: Bars | None = None
+    """Section réelle couvrant As : parmi les choix à moins de 10 % de la plus petite
+    section possible, on retient celui qui a le moins de barres (pose plus simple)."""
+    cands: list[Bars] = []
     for d in BAR_DIAMETERS:
         if d < d_min or d > d_max:
             continue
         n = max(n_min, math.ceil(as_cm2 / bar_area(d) - 1e-9))
         if even and n % 2:
             n += 1
-        if n > n_max:
-            continue
-        cand = Bars(n, d)
-        if best is None or (cand.area, cand.n) < (best.area - 1e-9, best.n):
-            best = cand
-    return best
+        if n <= n_max:
+            cands.append(Bars(n, d))
+    if not cands:
+        return None
+    a_min = min(c.area for c in cands)
+    ok = [c for c in cands if c.area <= 1.10 * a_min + 1e-9]
+    return min(ok, key=lambda c: (c.n, c.area))
 
 
 @dataclass
@@ -125,7 +127,7 @@ def stirrup_spacing(asw_s_cm2_per_m: float, d: int, legs: int, s_max: float) -> 
 
 def footing_design(
     a: float, b: float, nser_col: float, nu_col: float, sigma_sol: float, fsu: float,
-    *, cover: float = 0.05,
+    *, cover: float = 0.05, max_ratio: float = 1.5,
 ) -> FootingDesign:
     """Semelle isolée sous poteau, méthode des bielles (BAEL / pratique EC2).
 
@@ -137,8 +139,9 @@ def footing_design(
     A = B = h = 0.0
     for _ in range(4):  # itération sur le poids propre de la semelle
         area = nser / q_sol
-        # Semelle homothétique au poteau : A/B = a/b
-        B = round_up(max(0.60, math.sqrt(area * b / a)))
+        # Semelle homothétique au poteau (A/B = a/b), allongement limité à max_ratio
+        ratio = min(max(a / b, 1 / max_ratio), max_ratio)
+        B = round_up(max(0.60, math.sqrt(area / ratio)))
         A = round_up(max(0.60, area / B))
         d = max((A - a) / 4, (B - b) / 4, 0.15)
         h = round_up(max(0.30, d + cover))

@@ -8,7 +8,12 @@ from ..geometry import Drawing
 
 def import_plan(path: str | Path, *, units: str | None = None, scale: int | None = None, page: int = 1) -> Drawing:
     suffix = Path(path).suffix.lower()
-    if suffix in (".dwg", ".dxf"):
+    try:
+        with open(path, "rb") as f:
+            magic = f.read(6)
+    except OSError:
+        magic = b""
+    if suffix in (".dwg", ".dxf") or magic.startswith(b"AC10"):
         from .dxf_importer import import_dxf
 
         return import_dxf(path, units=units)

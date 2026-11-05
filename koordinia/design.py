@@ -73,11 +73,7 @@ def run(bld: Building, ls: LoadSettings, code, sigma_sol: float = 0.20, max_colu
         n = len(line.beams)
         sup = _support_coefs(n)
         for lvl_name, loads in levels:
-            m0s = []
-            for bid in line.beams:
-                L = beams[bid].length(cols)
-                bl = loads[bid]
-                m0s.append(code.elu(bl.g_m, bl.q_m) * L ** 2 / 8)
+            m0s = [code.elu(loads[bid].g_m0, loads[bid].q_m0) for bid in line.beams]
             for k, bid in enumerate(line.beams):
                 b = beams[bid]
                 L = b.length(cols)
@@ -90,9 +86,9 @@ def run(bld: Building, ls: LoadSettings, code, sigma_sol: float = 0.20, max_colu
                 right = sup[k + 1] * max(m0, m0s[k + 1] if k + 1 < n else 0)
                 ma = max(left, right)
                 f_v = 1.15 if n == 2 else (1.10 if n >= 3 else 1.0)
-                vu = f_v * code.elu(bl.g_v, bl.q_v) * L / 2
+                vu = f_v * code.elu(max(bl.g_rs, bl.g_re), max(bl.q_rs, bl.q_re))
                 d = code.beam(b.b, b.h, mt, ma, vu)
-                res.beams.append(BeamResult(bid, lvl_name, L, code.elu(bl.g_m, bl.q_m), m0, d))
+                res.beams.append(BeamResult(bid, lvl_name, L, 8 * m0 / L ** 2, m0, d))
 
     # ------------------------------------------------------------------ poteaux
     lf = 0.7 * bld.floor_height
@@ -118,6 +114,25 @@ def run(bld: Building, ls: LoadSettings, code, sigma_sol: float = 0.20, max_colu
         base = next(r for r in res.columns if r.column_id == c.id and r.storey == 1)
         fd = code.footing(base.design.b, base.design.h, base.nser, base.nu, sigma_sol)
         res.footings.append(FootingResult(c.id, fd))
+
+    # Recouvrement des semelles → semelles filantes / radier
+    cols_xy = {c.id: (c.x, c.y) for c in bld.columns}
+    fts = [(f.column_id, cols_xy[f.column_id], f.design) for f in res.footings]
+    overlaps = []
+    for k, (ia, (xa, ya), da) in enumerate(fts):
+        for ib, (xb, yb), db in fts[k + 1:]:
+            if abs(xa - xb) < (da.A + db.A) / 2 and abs(ya - yb) < (da.B + db.B) / 2:
+                overlaps.append(f"{ia}/{ib}")
+    if overlaps:
+        res.warnings.append(
+            f"Semelles qui se chevauchent ({len(overlaps)} paires : {', '.join(overlaps[:8])}"
+            f"{'…' if len(overlaps) > 8 else ''}) : prévoir semelles filantes ou jumelées."
+        )
+    area_ft = sum(f.design.A * f.design.B for f in res.footings)
+    if td.slab_area and area_ft > 0.5 * td.slab_area:
+        res.warnings.append(
+            f"Surface des semelles = {area_ft / td.slab_area:.0%} de l'emprise : un radier général est à étudier."
+        )
 
     failing = [r for r in res.beams if not r.design.ok] + [r for r in res.columns if not r.design.ok]
     if failing:

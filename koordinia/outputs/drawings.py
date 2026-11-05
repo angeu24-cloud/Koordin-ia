@@ -26,6 +26,7 @@ LAYERS = {
     "TEXTE": (7, "Continuous"),
     "COTATION": (8, "Continuous"),
     "CARTOUCHE": (7, "Continuous"),
+    "PLANCHER": (4, "Continuous"),
 }
 
 
@@ -80,14 +81,16 @@ def _axes(msp, res: ProjectResult, ext: float = 1.5):
         return
     x0, x1 = min(b.grid_x) - ext, max(b.grid_x) + ext
     y0, y1 = min(b.grid_y) - ext, max(b.grid_y) + ext
+    names_x = b.axis_x if len(b.axis_x) == len(b.grid_x) else [axis_name_x(i) for i in range(len(b.grid_x))]
+    names_y = b.axis_y if len(b.axis_y) == len(b.grid_y) else [axis_name_y(j) for j in range(len(b.grid_y))]
     for i, x in enumerate(b.grid_x):
         msp.add_line((x, y0), (x, y1), dxfattribs={"layer": "AXES"})
         msp.add_circle((x, y1 + 0.3), 0.3, dxfattribs={"layer": "AXES"})
-        _text(msp, x, y1 + 0.3, axis_name_x(i), 0.25, "AXES")
+        _text(msp, x, y1 + 0.3, names_x[i], 0.25, "AXES")
     for j, y in enumerate(b.grid_y):
         msp.add_line((x0, y), (x1, y), dxfattribs={"layer": "AXES"})
         msp.add_circle((x0 - 0.3, y), 0.3, dxfattribs={"layer": "AXES"})
-        _text(msp, x0 - 0.3, y, axis_name_y(j), 0.25, "AXES")
+        _text(msp, x0 - 0.3, y, names_y[j], 0.25, "AXES")
     # Chaînes de cotes entre axes + cote totale
     yd = min(b.grid_y) - ext + 0.4
     for xa, xb in zip(b.grid_x, b.grid_x[1:]):
@@ -101,6 +104,15 @@ def _axes(msp, res: ProjectResult, ext: float = 1.5):
     for ya, yb in zip(b.grid_y, b.grid_y[1:]):
         msp.add_linear_dim(base=(xd, ya), p1=(max(b.grid_x), ya), p2=(max(b.grid_x), yb), angle=90,
                            dimstyle="KOORD", dxfattribs={"layer": "COTATION"}).render()
+
+
+def _slab_outline(msp, bld, layer: str = "PLANCHER") -> None:
+    if not bld.slab:
+        return
+    from ..slab import SlabMask, outline_segments
+
+    for x0, y0, x1, y1 in outline_segments(SlabMask.from_dict(bld.slab)):
+        msp.add_line((x0, y0), (x1, y1), dxfattribs={"layer": layer})
 
 
 def _column_section_at(res: ProjectResult, cid: str, storey: int):
@@ -125,6 +137,7 @@ def plan_coffrage(res: ProjectResult, path: Path, level: str, storey: int) -> Pa
     b = res.building
     cols = b.column_map()
     _axes(msp, res)
+    _slab_outline(msp, b)
     _draw_columns(msp, res, storey)
     for bm in b.beams:
         c1, c2 = cols[bm.start], cols[bm.end]
@@ -332,13 +345,8 @@ def plan_controle(bld, drawing, path: Path) -> Path:
     doc.layers.add("IMPORT", color=8)
     doc.layers.add("MODELE", color=1)
     msp = doc.modelspace()
-    ox = oy = 0.0
-    if bld.columns and drawing.rects:
-        # Recalage : la reconnaissance a ramené l'origine sur le premier poteau
-        from .. import recognition
-
-        rects, _ = recognition.find_columns(drawing)
-        ox, oy = min(r.cx for r in rects), min(r.cy for r in rects)
+    ox, oy = bld.origin  # la reconnaissance a ramené l'origine sur le premier poteau
+    _slab_outline(msp, bld, "MODELE")
     for r in drawing.rects:
         _rect(msp, r.x0 - ox, r.y0 - oy, r.x1 - ox, r.y1 - oy, "IMPORT")
     for s in drawing.segments:

@@ -68,6 +68,10 @@ class Building:
     grid_y: list[float] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     source: str = ""
+    slab: dict | None = None              # contour du plancher (grille, voir slab.SlabMask)
+    origin: list[float] = field(default_factory=lambda: [0.0, 0.0])  # origine dans le dessin (m)
+    axis_x: list[str] = field(default_factory=list)   # repères des files selon X (lus sur le plan)
+    axis_y: list[str] = field(default_factory=list)
 
     # ------------------------------------------------------------------ helpers
     def column_map(self) -> dict[str, Column]:
@@ -92,6 +96,10 @@ class Building:
             grid_y=d.get("grid_y", []),
             warnings=d.get("warnings", []),
             source=d.get("source", ""),
+            slab=d.get("slab"),
+            origin=d.get("origin", [0.0, 0.0]),
+            axis_x=d.get("axis_x", []),
+            axis_y=d.get("axis_y", []),
         )
 
     def save(self, path: str | Path) -> None:

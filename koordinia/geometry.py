@@ -47,6 +47,7 @@ class Segment:
     x1: float
     y1: float
     layer: str = ""
+    dashed: bool = False  # ligne discontinue (axe, ligne cachée…)
 
     def __post_init__(self) -> None:
         self.x0, self.y0, self.x1, self.y1 = float(self.x0), float(self.y0), float(self.x1), float(self.y1)

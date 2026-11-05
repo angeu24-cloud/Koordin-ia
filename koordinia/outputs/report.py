@@ -98,7 +98,9 @@ def build_html(res: ProjectResult) -> str:
                   if ls.continuity else "") + "</p>")
 
     out.append("<h2>3. Modèle structurel reconnu</h2>")
-    out.append(f"<p>{len(b.columns)} poteaux, {len(b.beams)} poutres, {len(b.panels)} panneaux de plancher. "
+    direct = sum(td.column_direct_area.values())
+    out.append(f"<p>{len(b.columns)} poteaux, {len(b.beams)} poutres. Surface de plancher par niveau : "
+               f"<b>{_f(td.slab_area, 1)} m²</b> (dont {_f(direct, 1)} m² reportés directement sur poteaux). "
                f"Trame X : {' / '.join(_f(v, 2) for v in b.grid_x)} m — "
                f"Trame Y : {' / '.join(_f(v, 2) for v in b.grid_y)} m.</p>")
     if res.warnings:

@@ -25,6 +25,11 @@ def _add_import_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--niveaux", type=int, default=1, help="Nombre de planchers au-dessus des fondations")
     p.add_argument("--hauteur", type=float, default=3.0, help="Hauteur d'étage (m)")
     p.add_argument("--portee-max", type=float, default=8.0, help="Portée maximale d'une poutre (m)")
+    p.add_argument("--planche", help="Planche à traiter si le dessin en contient plusieurs : numéro ou mots du "
+                                     "titre (ex. « etage courant »). Voir « koordinia planches ».")
+    p.add_argument("--calque-poteaux", help="Calque des poteaux (nom exact ou expression régulière)")
+    p.add_argument("--sans-contour", action="store_true",
+                   help="Ne pas déduire le contour du plancher des murs (mailles de la trame uniquement)")
     p.add_argument("-o", "--sortie", default="resultats", help="Dossier de sortie")
 
 
@@ -32,8 +37,23 @@ def _import_model(args) -> tuple[Building, object | None]:
     from .importers import import_plan
     from .recognition import build_model
 
+    from .sheets import crop, find_sheets, select_sheet
+
     drawing = import_plan(args.plan, units=args.unites, scale=args.echelle, page=args.page)
-    bld = build_model(drawing, n_levels=args.niveaux, floor_height=args.hauteur, max_span=args.portee_max)
+    sheets = find_sheets(drawing)
+    if args.planche:
+        if not sheets:
+            raise ValueError("Aucune planche (cadre) détectée dans le dessin : retirez --planche.")
+        sheet = select_sheet(sheets, args.planche)
+        drawing = crop(drawing, sheet.bbox)
+        drawing.warnings.append(f"Planche traitée : n° {sheet.index} « {sheet.title} ».")
+    elif sum(s.is_plan for s in sheets) > 1:
+        raise ValueError(
+            "Le dessin contient plusieurs planches ; choisissez celle de l'étage courant avec --planche :\n"
+            + "\n".join(f"  {s.index}. {s.title}" for s in sheets)
+        )
+    bld = build_model(drawing, n_levels=args.niveaux, floor_height=args.hauteur, max_span=args.portee_max,
+                      column_layer=args.calque_poteaux, footprint=not args.sans_contour)
     return bld, drawing
 
 
@@ -133,6 +153,22 @@ def cmd_calculer(args) -> int:
     return 0
 
 
+def cmd_planches(args) -> int:
+    from .importers import import_plan
+    from .sheets import find_sheets
+
+    drawing = import_plan(args.plan, units=args.unites, scale=args.echelle, page=args.page)
+    sheets = find_sheets(drawing)
+    if not sheets:
+        print("Aucune planche (cadre) détectée : le dessin sera traité en entier.")
+        return 0
+    for sh in sheets:
+        x0, y0, x1, y1 = sh.bbox
+        tag = "plan" if sh.is_plan else "    "
+        print(f"{sh.index:3d}. [{tag}] {sh.title}   ({x1 - x0:.0f} × {y1 - y0:.0f} m)")
+    return 0
+
+
 def cmd_exemple(args) -> int:
     from .sample import write_sample_dxf, write_sample_pdf
 
@@ -168,6 +204,10 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--sans-degression", action="store_true", help="Ne pas appliquer la dégression de Q")
     c.add_argument("--sol", type=float, default=0.20, help="Contrainte admissible du sol (MPa)")
     c.set_defaults(func=cmd_calculer)
+
+    pl = sub.add_parser("planches", help="Lister les planches (cadres) d'un dessin")
+    _add_import_args(pl)
+    pl.set_defaults(func=cmd_planches)
 
     e = sub.add_parser("exemple", help="Générer un plan d'exemple (DXF + PDF)")
     e.add_argument("-o", "--sortie", default="exemple")

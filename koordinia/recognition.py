@@ -17,6 +17,7 @@ import re
 
 from .geometry import Drawing, Rect
 from .model import Beam, Building, Column, Panel
+from .slab import SlabMask, _dilate, mask_from_drawing
 
 COLUMN_LAYER_RE = re.compile(r"POT|COLON|COLUMN|^COL|S-COLS|STRU.*COL", re.IGNORECASE)
 
@@ -39,13 +40,28 @@ def _dedupe(rects: list[Rect], tol: float = 0.05) -> list[Rect]:
     return kept
 
 
-def find_columns(drawing: Drawing) -> tuple[list[Rect], str]:
+def find_columns(drawing: Drawing, layer: str | None = None) -> tuple[list[Rect], str]:
+    """Rectangles représentant les poteaux, et la méthode de détection employée.
+
+    `layer` : nom (ou expression régulière) du calque des poteaux, s'il est connu.
+    """
     candidates = [r for r in drawing.rects if _is_column_size(r)]
+    if layer:
+        rx = re.compile(f"^(?:{layer})$", re.IGNORECASE)
+        forced = [r for r in candidates if rx.search(r.layer or "")]
+        return _dedupe(forced), f"calque imposé « {layer} »"
     on_layer = [r for r in candidates if r.layer and COLUMN_LAYER_RE.search(r.layer)]
     if on_layer:
         return _dedupe(on_layer), "calque poteaux"
     filled = [r for r in candidates if r.filled]
     if len(filled) >= 4:
+        # Les poteaux sont en général tous hachurés sur un même calque : on garde le calque dominant
+        counts: dict[str, int] = {}
+        for r in filled:
+            counts[r.layer] = counts.get(r.layer, 0) + 1
+        main, n = max(counts.items(), key=lambda kv: kv[1])
+        if n >= 0.7 * len(filled):
+            return _dedupe([r for r in filled if r.layer == main]), f"hachures pleines du calque « {main} »"
         return _dedupe(filled), "rectangles pleins/hachurés"
     return _dedupe(candidates), "tous les petits rectangles (aucun calque poteau ni remplissage)"
 
@@ -65,6 +81,42 @@ def _nearest(grid: list[float], v: float) -> int:
     return min(range(len(grid)), key=lambda i: abs(grid[i] - v))
 
 
+AXIS_LABEL_RE = re.compile(r"^[A-Z]{1,2}'?$|^\d{1,2}'?$")
+
+
+def read_axis_labels(drawing: Drawing, grid_x, grid_y, ox, oy, rects) -> tuple[list[str], list[str]]:
+    """Lit les repères d'axes de l'architecte (bulles en bout de files) ; vide si introuvables."""
+    if not drawing.texts:
+        return [], []
+    x0, x1 = min(r.x0 for r in rects), max(r.x1 for r in rects)
+    y0, y1 = min(r.y0 for r in rects), max(r.y1 for r in rects)
+    labels = [t for t in drawing.texts if AXIS_LABEL_RE.match(t.text.strip().upper())]
+
+    def pick(coord: float, along_x: bool) -> str | None:
+        votes: dict[str, int] = {}
+        for t in labels:
+            if along_x:
+                ok = abs(t.x - coord) < 0.35 and (t.y > y1 + 0.5 or t.y < y0 - 0.5) and abs(t.y - (y0 + y1) / 2) < 30
+            else:
+                ok = abs(t.y - coord) < 0.35 and (t.x > x1 + 0.5 or t.x < x0 - 0.5) and abs(t.x - (x0 + x1) / 2) < 40
+            if ok:
+                key = t.text.strip().upper()
+                votes[key] = votes.get(key, 0) + 1
+        return max(votes, key=votes.get) if votes else None
+
+    ax = [pick(g + ox, True) for g in grid_x]
+    ay = [pick(g + oy, False) for g in grid_y]
+    if sum(a is not None for a in ax) < 0.5 * len(ax) or sum(a is not None for a in ay) < 0.5 * len(ay):
+        return [], []
+    def fill(names: list[str | None]) -> list[str]:
+        out: list[str] = []
+        for k, n in enumerate(names):
+            out.append(n if n else (out[-1] + "+" if out else "0"))
+        return out
+
+    return fill(ax), fill(ay)
+
+
 def default_beam_height(span: float) -> float:
     """Pré-dimensionnement h ≈ L/12, arrondi aux 5 cm supérieurs, minimum 30 cm."""
     return max(0.30, math.ceil(span / 12 / 0.05 - 1e-9) * 0.05)
@@ -78,8 +130,10 @@ def build_model(
     grid_tol: float = 0.30,
     max_span: float = 8.0,
     beam_width: float | None = None,
+    column_layer: str | None = None,
+    footprint: bool = True,
 ) -> Building:
-    rects, method = find_columns(drawing)
+    rects, method = find_columns(drawing, layer=column_layer)
     bld = Building(n_levels=n_levels, floor_height=floor_height, source=drawing.source)
     bld.warnings.extend(drawing.warnings)
     bld.warnings.append(f"Poteaux détectés par : {method} ({len(rects)} trouvés).")
@@ -92,8 +146,26 @@ def build_model(
     # Origine ramenée au coin bas-gauche de la trame
     ox = min(r.cx for r in rects)
     oy = min(r.cy for r in rects)
+    bld.origin = [round(ox, 4), round(oy, 4)]
+
+    # Contour du plancher déduit des murs (plans d'architecte)
+    mask = None
+    if footprint:
+        m = 4.0
+        bbox = (min(r.x0 for r in rects) - m, min(r.y0 for r in rects) - m,
+                max(r.x1 for r in rects) + m, max(r.y1 for r in rects) + m)
+        mask = mask_from_drawing(drawing, bbox, keep_layers={r.layer for r in rects if r.layer})
+        if mask is not None:
+            mask.x0 -= ox
+            mask.y0 -= oy
+            bld.slab = mask.to_dict()
+            bld.warnings.append(f"Contour de plancher déduit des murs : {mask.area:.1f} m² (à vérifier).")
+        else:
+            bld.warnings.append("Contour de plancher non détecté : on utilise les mailles complètes de la trame.")
     bld.grid_x = [round(v - ox, 3) for v in cluster([r.cx for r in rects], grid_tol)]
     bld.grid_y = [round(v - oy, 3) for v in cluster([r.cy for r in rects], grid_tol)]
+
+    bld.axis_x, bld.axis_y = read_axis_labels(drawing, bld.grid_x, bld.grid_y, ox, oy, rects)
 
     nodes: dict[tuple[int, int], Column] = {}
     for r in sorted(rects, key=lambda r: (round(r.cy - oy, 1), r.cx)):
@@ -137,6 +209,16 @@ def build_model(
         col_line = sorted([c for c in bld.columns if c.grid_i == i], key=lambda c: c.grid_j)
         for a, c in zip(col_line, col_line[1:]):
             add_beam(a, c, "Y")
+    if mask is not None:
+        dil = SlabMask(mask.res, mask.x0, mask.y0, _dilate(mask.mask, int(0.5 / mask.res)))
+        ny, nx = dil.mask.shape
+        for key, bm in list(beams.items()):
+            c1, c2 = nodes[key[0]], nodes[key[1]]
+            pts = [(c1.x + t * (c2.x - c1.x), c1.y + t * (c2.y - c1.y)) for t in (0.25, 0.5, 0.75)]
+            ok = all(0 <= int((x - dil.x0) / dil.res) < nx and 0 <= int((y - dil.y0) / dil.res) < ny
+                     and dil.mask[int((y - dil.y0) / dil.res), int((x - dil.x0) / dil.res)] for x, y in pts)
+            if not ok:
+                del beams[key]
     bld.beams = list(beams.values())
     for n, b in enumerate(bld.beams, start=1):
         b.id = f"N{n}"
