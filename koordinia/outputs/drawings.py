@@ -408,6 +408,42 @@ def plan_ferraillage(res: ProjectResult, path: Path, col_t, beam_t, foot_t) -> P
               align=TextEntityAlignment.TOP_CENTER)
         _text(msp, x + d.A / 2, y - d.B - 0.62, ", ".join(t.members), 0.10, align=TextEntityAlignment.TOP_CENTER)
         x += d.A + 1.5
+    # Escaliers : coupe sur la volée (échelle 1)
+    if res.stairs:
+        y -= 3.0
+        _text(msp, 0, y + 1.0, "ESCALIERS (coupe sur volée)", 0.25, align=TextEntityAlignment.BOTTOM_LEFT)
+        x = 0.0
+        for st in res.stairs:
+            n_f = math.ceil(st.risers / st.flights)
+            pts = [(x, y - n_f * st.riser_h)]
+            cx, cy = x, y - n_f * st.riser_h
+            for k in range(n_f):
+                cy += st.riser_h
+                pts.append((cx, cy))
+                if k < n_f - 1:
+                    cx += st.going
+                    pts.append((cx, cy))
+            pts.append((cx + st.landing, cy))
+            msp.add_lwpolyline(pts, dxfattribs={"layer": "COFFRAGE"})
+            # sous-face de paillasse et de palier
+            e_ = st.thickness / math.cos(math.radians(st.angle))
+            x0b, y0b = x, y - n_f * st.riser_h - e_
+            x1b, y1b = x + st.flight_len, y - st.riser_h - e_
+            msp.add_line((x0b, y0b), (x1b, y1b + st.riser_h), dxfattribs={"layer": "COFFRAGE"})
+            msp.add_line((x1b, y1b + st.riser_h), (cx + st.landing, cy - st.thickness),
+                         dxfattribs={"layer": "COFFRAGE"})
+            c = 0.03
+            msp.add_line((x0b + 0.05, y0b + c), (x1b, y1b + st.riser_h + c), dxfattribs={"layer": "ACIERS"})
+            msp.add_line((x1b, y1b + st.riser_h + c), (cx + st.landing - 0.05, cy - st.thickness + c),
+                         dxfattribs={"layer": "ACIERS"})
+            _text(msp, x + (st.flight_len + st.landing) / 2, y - n_f * st.riser_h - 0.6,
+                  f"{st.floor} — {st.risers} marches {st.riser_h * 100:.1f}×{st.going * 100:.0f} — paillasse "
+                  f"{st.thickness * 100:.0f} cm", 0.12, align=TextEntityAlignment.TOP_CENTER)
+            _text(msp, x + (st.flight_len + st.landing) / 2, y - n_f * st.riser_h - 0.85,
+                  f"Inf. {st.bars_bottom} — Chapeaux {st.bars_top} — Répartition {st.bars_dist}", 0.11,
+                  align=TextEntityAlignment.TOP_CENTER)
+            x += st.flight_len + st.landing + 1.5
+        y -= 3.0
     _cartouche(msp, 0, y - 4.5, "PLANS DE FERRAILLAGE", res)
     doc.saveas(path)
     return path

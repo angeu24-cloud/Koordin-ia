@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import numpy as np
+
 from .codes.common import BeamDesign, ColumnDesign, FootingDesign
 from typing import TYPE_CHECKING
 
@@ -121,6 +123,7 @@ class ProjectResult:
     footings: list[FootingResult] = field(default_factory=list)
     balconies: list[BalconyResult] = field(default_factory=list)
     transfers: list[TransferResult] = field(default_factory=list)
+    stairs: list = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
     @property
@@ -232,6 +235,42 @@ def run(model, ls: LoadSettings, code, sigma_sol: float = 0.20, max_column: floa
         sup = " – ".join(f"{a[0]} {a[1]}" for a in tb.supports)
         res.transfers.append(TransferResult(tb.id, tb.floor_name, tb.storey, tb.length, sup,
                                             [l[3] for l in tb.loads], m0, vu, d))
+
+    # ------------------------------------------------------------------ escaliers
+    from .stairs import design_stair
+    from .zones import zone_objects
+
+    seen_s: dict = {}
+    for k in range(proj.n - 1):
+        plan = proj.storeys[k].plan
+        for z in zone_objects(plan):
+            if z.type != "escalier":
+                continue
+            zm = z.mask()
+            jj, ii = np.nonzero(zm.mask)
+            if len(jj) == 0:
+                continue
+            lx = float((ii.max() - ii.min() + 1) * zm.res)
+            ly = float((jj.max() - jj.min() + 1) * zm.res)
+            h = proj.storeys[k].height
+            key = (round(lx, 1), round(ly, 1), round(h, 2), z.name)
+            label = (f"{proj.storeys[k].name} → {proj.storeys[k + 1].name}" if not proj.single_plan
+                     else f"étage courant (h = {h:.2f} m)")
+            if key in seen_s:
+                if not proj.single_plan:
+                    seen_s[key].floor += f", {label}"
+                continue
+            st = design_stair(code, label, z.name, lx, ly, h)
+            seen_s[key] = st
+            res.stairs.append(st)
+            g_used = z.g_total if z.g_total is not None else ls.g_floor + ls.g_finishes
+            if st.g_mean > 1.10 * g_used:
+                res.warnings.append(
+                    f"Escalier {label} : permanent calculé {st.g_mean:.2f} kN/m² > {g_used:.2f} kN/m² pris dans "
+                    "la descente de charges — ajuster la règle « Escalier » (g_total) dans les usages du projet."
+                )
+            for n_ in st.notes:
+                res.warnings.append(f"Escalier {label} : {n_}.")
 
     # ------------------------------------------------------------------ balcons
     seen_b: set[tuple] = set()

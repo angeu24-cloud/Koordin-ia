@@ -195,6 +195,21 @@ def build_html(res: ProjectResult) -> str:
                    "naissants + poids propre ; appuis = poteaux ou murs de l'étage inférieur. À valider "
                    "par l'ingénieur (nœuds, flèche, ferraillage des appuis).</p>")
 
+    if res.stairs:
+        out.append("<h3>Escaliers</h3><table><tr><th>Volée</th><th>Cage (m)</th><th>Marches</th><th>h × g (cm)</th>"
+                   "<th>Volées × emm. (m)</th><th>Portée (m)</th><th>Paillasse (cm)</th><th>G volée / palier "
+                   "(kN/m²)</th><th>M0 (kN.m/m)</th><th>Aciers inf.</th><th>Chapeaux</th><th>Répartition</th>"
+                   "<th>Poutre palière (kN/m ELU)</th><th>Remarque</th></tr>")
+        for st in res.stairs:
+            out.append(f"<tr><td>{e(st.floor)}</td><td>{_f(st.cage[0], 2)} × {_f(st.cage[1], 2)}</td>"
+                       f"<td>{st.risers}</td><td>{st.riser_h * 100:.1f} × {st.going * 100:.0f}</td>"
+                       f"<td>{st.flights} × {_f(st.width, 2)}</td><td>{_f(st.span, 2)}</td>"
+                       f"<td>{st.thickness * 100:.0f}</td><td>{_f(st.g_flight, 2)} / {_f(st.g_landing, 2)}</td>"
+                       f"<td>{_f(st.m0)}</td><td>{st.bars_bottom}</td><td>{st.bars_top}</td><td>{st.bars_dist}</td>"
+                       f"<td>{_f(st.landing_beam_load)}</td><td class='small'>{e('; '.join(st.notes))}</td></tr>")
+        out.append("</table><p class='small'>Paillasse + palier en travée unique sur poutres palières, "
+                   "Mt = 0,85·M0, Ma = 0,30·M0 ; marches 2h + g ≈ 63 cm ; Q = 2,5 kN/m².</p>")
+
     out.append("<h2>4. Descente de charges sur poteaux</h2>")
     out.append("<table><tr><th>Poteau</th><th>Niveau</th><th>G cumulé (kN)</th><th>Q cumulé (kN)</th>"
                "<th>Nser = G+Q (kN)</th><th>Nu = 1,35G+1,5Q (kN)</th></tr>")
