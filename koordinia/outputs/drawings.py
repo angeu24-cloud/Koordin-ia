@@ -141,8 +141,8 @@ def plan_coffrage(res: ProjectResult, path: Path, level: str, storey: int, *, pl
     _axes(msp, res, plan=b)
     _slab_outline(msp, b)
     _draw_columns(msp, res, storey, plan=b)
-    # Poteaux de l'étage supérieur qui naissent sur ce plancher
     proj = res.project
+    # Poteaux de l'étage supérieur qui naissent sur ce plancher
     if not proj.single_plan and storey < proj.n:
         above = proj.storeys[storey].plan
         on_wall = {w.column_id for w in res.takedown.wall_supports if w.storey == storey}
@@ -154,20 +154,24 @@ def plan_coffrage(res: ProjectResult, path: Path, level: str, storey: int, *, pl
                 msp.add_line((x0, y1), (x1, y0), dxfattribs={"layer": "POTEAUX", "color": 1})
                 tag = "sur mur" if c.id in on_wall else "naissant"
                 _text(msp, x1 + 0.08, y0 - 0.12, f"{c.id} {tag}", 0.12, align=TextEntityAlignment.TOP_LEFT)
+    designed = {r.beam_id: r.design for r in res.beams
+                if (r.storey == storey - 1 if not proj.single_plan else r.level == level)}
     for bm in b.beams:
         c1, c2 = cols[bm.start], cols[bm.end]
-        w = bm.b / 2
+        dz = designed.get(bm.id)
+        sec_b, sec_h = (dz.b, dz.h) if dz else (bm.b, bm.h)
+        sec = f"{sec_b * 100:.0f}x{sec_h * 100:.0f}" + (" TRANSFERT" if dz and any("transfert" in n for n in dz.notes) else "")
+        w = sec_b / 2
         if bm.direction == "X":
             xa, xb = c1.x + c1.b / 2, c2.x - c2.b / 2
             msp.add_line((xa, c1.y - w), (xb, c1.y - w), dxfattribs={"layer": "POUTRES"})
             msp.add_line((xa, c1.y + w), (xb, c1.y + w), dxfattribs={"layer": "POUTRES"})
-            _text(msp, (xa + xb) / 2, c1.y + w + 0.12, f"{bm.id} ({bm.b * 100:.0f}x{bm.h * 100:.0f})", 0.12)
+            _text(msp, (xa + xb) / 2, c1.y + w + 0.12, f"{bm.id} ({sec})", 0.12)
         else:
             ya, yb = c1.y + c1.h / 2, c2.y - c2.h / 2
             msp.add_line((c1.x - w, ya), (c1.x - w, yb), dxfattribs={"layer": "POUTRES"})
             msp.add_line((c1.x + w, ya), (c1.x + w, yb), dxfattribs={"layer": "POUTRES"})
-            _text(msp, c1.x - w - 0.12, (ya + yb) / 2, f"{bm.id} ({bm.b * 100:.0f}x{bm.h * 100:.0f})", 0.12,
-                  rot=90)
+            _text(msp, c1.x - w - 0.12, (ya + yb) / 2, f"{bm.id} ({sec})", 0.12, rot=90)
     ftype = res.loads.floor_type
     for p in b.panels:
         c = cols[p.corners[0]]

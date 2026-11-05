@@ -130,6 +130,19 @@ def run(model, ls: LoadSettings, code, sigma_sol: float = 0.20, max_column: floa
                 f_v = 1.15 if n == 2 else (1.10 if n >= 3 else 1.0)
                 vu = f_v * code.elu(max(bl.g_rs, bl.g_re), max(bl.q_rs, bl.q_re))
                 d = code.beam(b.b, b.h, mt, ma, vu)
+                bw, bh = b.b, b.h
+                # Section insuffisante (aciers comprimés, cisaillement, aciers non logeables) : on l'agrandit
+                while (not d.ok or d.as_comp > 0) and bh < 1.20 - 1e-9:
+                    bh = round(bh + 0.05, 2)
+                    if bh >= 0.80 and bw < 0.50:
+                        bw = round(bw + 0.05, 2)
+                    w_extra = 25 * (bw * bh - b.b * b.h)  # poids propre supplémentaire
+                    d = code.beam(bw, bh, mt + code.elu(w_extra, 0) * L ** 2 / 8 * mt / max(m0, 1e-9),
+                                  ma, vu + code.elu(w_extra, 0) * L / 2)
+                if (bw, bh) != (b.b, b.h):
+                    d.notes.append(f"Section portée de {b.b * 100:.0f}×{b.h * 100:.0f} à {bw * 100:.0f}×{bh * 100:.0f} cm")
+                    res.warnings.append(f"Poutre {bid} ({label}) : section portée de {b.b * 100:.0f}×{b.h * 100:.0f} "
+                                        f"à {bw * 100:.0f}×{bh * 100:.0f} cm.")
                 transfer = [p[3] for p in sl.point_loads.get(bid, [])]
                 if transfer:
                     d.notes.append(f"Poutre de transfert : porte {', '.join(transfer)}")
