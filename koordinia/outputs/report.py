@@ -15,12 +15,12 @@ def _f(v: float, n: int = 1) -> str:
 
 def quantities(res: ProjectResult) -> dict:
     """Métré estimatif : béton (m³) et acier (kg) par famille d'éléments."""
-    b = res.building
-    H = b.floor_height
+    proj = res.project
     cover = res.code.cover
     q = {"poteaux": [0.0, 0.0], "poutres": [0.0, 0.0], "semelles": [0.0, 0.0]}
     for r in res.columns:
         d = r.design
+        H = proj.storeys[r.storey - 1].height
         q["poteaux"][0] += d.b * d.h * H
         if d.bars:
             lap = 40 * d.bars.d / 1000
@@ -30,7 +30,7 @@ def quantities(res: ProjectResult) -> dict:
             q["poteaux"][1] += (int(H / d.stirrups.s) + 1) * per * bar_mass(d.stirrups.d)
     for r in res.beams:
         d = r.design
-        n_lvl = max(1, b.n_levels - 1) if r.level == "courant" else 1
+        n_lvl = max(1, proj.n - 1) if (proj.single_plan and r.level == "courant") else 1
         L = r.span
         q["poutres"][0] += n_lvl * d.b * d.h * L
         kg = 0.0
@@ -66,10 +66,11 @@ th { background-color: #ddd; }
 
 def build_html(res: ProjectResult) -> str:
     b, ls, code, td = res.building, res.loads, res.code, res.takedown
+    proj = res.project
     e = html.escape
     out: list[str] = [f"<html><head><meta charset='utf-8'><style>{CSS}</style></head><body>"]
     out.append("<h1>Note de calcul — Structure béton armé</h1>")
-    out.append(f"<p class='small'>Koordin-IA — {date.today():%d/%m/%Y} — Source : {e(b.source)}</p>")
+    out.append(f"<p class='small'>Koordin-IA — {date.today():%d/%m/%Y} — Source : {e(proj.source)}</p>")
     out.append(
         "<p class='warn'><b>Avertissement :</b> document généré automatiquement à partir d'un modèle "
         "reconnu sur plan. Il constitue une aide au pré-dimensionnement et doit être vérifié, complété "
@@ -80,8 +81,12 @@ def build_html(res: ProjectResult) -> str:
     out.append(f"<li>Règlement : <b>{e(code.name)}</b></li>")
     for line in code.describe():
         out.append(f"<li>{e(line)}</li>")
-    out.append(f"<li>Bâtiment : {b.n_levels} niveau(x), hauteur d'étage {_f(b.floor_height, 2)} m ; "
-               f"longueur de flambement lf = 0,7·l0 = {_f(0.7 * b.floor_height, 2)} m</li>")
+    if proj.single_plan:
+        out.append(f"<li>Bâtiment : {proj.n} niveau(x), hauteur d'étage {_f(proj.storeys[0].height, 2)} m ; "
+                   f"longueur de flambement lf = 0,7·l0 = {_f(0.7 * proj.storeys[0].height, 2)} m</li>")
+    else:
+        out.append(f"<li>Bâtiment : {proj.n} étages ({', '.join(st.name for st in proj.storeys)}) + terrasse ; "
+                   "longueur de flambement lf = 0,7·l0</li>")
     out.append(f"<li>Plancher : {'corps creux (porteur dans un sens)' if ls.floor_type == 'corps_creux' else 'dalle pleine'}</li>")
     out.append(f"<li>Contrainte admissible du sol (ELS) : σsol = {_f(res.sigma_sol, 2)} MPa</li></ul>")
 
@@ -98,6 +103,22 @@ def build_html(res: ProjectResult) -> str:
                   if ls.continuity else "") + "</p>")
 
     out.append("<h2>3. Modèle structurel reconnu</h2>")
+    if not proj.single_plan:
+        out.append("<table><tr><th>Étage</th><th>Hauteur (m)</th><th>Planche</th><th>Poteaux</th><th>Poutres</th>"
+                   "<th>Plancher porté</th><th>Surface (m²)</th></tr>")
+        for k, st in enumerate(proj.storeys):
+            sl = td.storeys[k]
+            out.append(f"<tr><td>{e(st.name)}</td><td>{_f(st.height, 2)}</td><td>{e(st.sheet)}</td>"
+                       f"<td>{len(st.plan.columns)}</td><td>{len(st.plan.beams)}</td><td>{e(sl.floor_name)}</td>"
+                       f"<td>{_f(sl.slab_area, 1)}</td></tr>")
+        out.append("</table>")
+        if td.wall_supports:
+            out.append("<h3>Poteaux reposant sur des murs</h3><table><tr><th>Poteau</th><th>Mur de l'étage</th>"
+                       "<th>G (kN)</th><th>Q (kN)</th></tr>")
+            for ws in td.wall_supports:
+                out.append(f"<tr><td>{ws.column_id}</td><td>{e(proj.storeys[ws.storey - 1].name)}</td>"
+                           f"<td>{_f(ws.g)}</td><td>{_f(ws.q)}</td></tr>")
+            out.append("</table>")
     direct = sum(td.column_direct_area.values())
     out.append(f"<p>{len(b.columns)} poteaux, {len(b.beams)} poutres. Surface de plancher par niveau : "
                f"<b>{_f(td.slab_area, 1)} m²</b> (dont {_f(direct, 1)} m² reportés directement sur poteaux). "
@@ -113,7 +134,7 @@ def build_html(res: ProjectResult) -> str:
     out.append("<table><tr><th>Poteau</th><th>Niveau</th><th>G cumulé (kN)</th><th>Q cumulé (kN)</th>"
                "<th>Nser = G+Q (kN)</th><th>Nu = 1,35G+1,5Q (kN)</th></tr>")
     for r in sorted(res.columns, key=lambda r: (int(r.column_id[1:]), -r.storey)):
-        out.append(f"<tr><td>{r.column_id}</td><td>{r.storey}</td><td>{_f(r.g)}</td><td>{_f(r.q)}</td>"
+        out.append(f"<tr><td>{r.column_id}</td><td>{e(r.storey_name or str(r.storey))}</td><td>{_f(r.g)}</td><td>{_f(r.q)}</td>"
                    f"<td>{_f(r.nser)}</td><td>{_f(r.nu)}</td></tr>")
     out.append("</table>")
 
@@ -123,7 +144,7 @@ def build_html(res: ProjectResult) -> str:
     for r in sorted(res.columns, key=lambda r: (int(r.column_id[1:]), -r.storey)):
         d = r.design
         state = "OK" if d.ok else f"<span class='ko'>NON — {e('; '.join(d.notes))}</span>"
-        out.append(f"<tr><td>{r.column_id}</td><td>{r.storey}</td><td>{d.b * 100:.0f}×{d.h * 100:.0f}"
+        out.append(f"<tr><td>{r.column_id}</td><td>{e(r.storey_name or str(r.storey))}</td><td>{d.b * 100:.0f}×{d.h * 100:.0f}"
                    f"{' *' if r.resized else ''}</td><td>{_f(d.slenderness)}</td><td>{_f(d.nu)}</td>"
                    f"<td>{_f(d.as_req, 2)}</td><td>{_f(d.as_min, 2)}</td><td>{d.bars or '—'}</td>"
                    f"<td>{d.stirrups or '—'}</td><td>{state}</td></tr>")

@@ -71,6 +71,11 @@ koordinia detecter plans_archi.dwg --planche "etage courant" --niveaux 5 --haute
 #    → ouvrir projet/controle_modele.dxf dans AutoCAD pour vérifier,
 #      corriger si besoin projet/modele.json (sections, poutres…)
 
+# 1 bis. Modéliser TOUS les niveaux (une planche par niveau, hauteurs lues sur les coupes)
+koordinia niveaux plans_archi.dwg                       # niveaux, hauteurs et planches retenues
+koordinia detecter plans_archi.dwg --tous-niveaux -o projet/
+koordinia calculer --modele projet/projet.json --norme bael -o projet/
+
 # 2. Calculer (BAEL ou Eurocode 2)
 koordinia calculer --modele projet/modele.json --norme bael --fc 25 --fe 400 --sol 0.2 -o projet/
 
@@ -98,6 +103,10 @@ Principales options de `calculer` (`koordinia calculer -h` pour la liste complè
 | `--planche` | — | Planche à traiter : numéro ou mots du titre (`"etage courant"`) |
 | `--calque-poteaux` | détecté | Calque des poteaux (nom ou expression régulière) |
 | `--sans-contour` | — | Ne pas déduire le contour du plancher des murs |
+| `--tous-niveaux` | — | Un modèle par niveau (planches et hauteurs lues dans le dessin) |
+| `--affectation` | auto | Planche par niveau : `"RDC=3,ETAGE 2=4"` (numéros de `koordinia planches`) |
+| `--hauteurs` | coupes | Hauteurs imposées : `"RDC=3.29"` |
+| `--liste-niveaux` | coupes | Niveaux si les coupes n'en donnent pas : `"RDC,ETAGE 1,ETAGE 2,TERRASSE"` |
 
 ## Comment les plans sont lus
 
@@ -128,9 +137,39 @@ Principales options de `calculer` (`koordinia calculer -h` pour la liste complè
   - Porte-à-faux sans poutre en vis-à-vis : la cellule va au poteau le plus proche,
     avec un avertissement.
 
+## Modélisation multi-niveaux (`--tous-niveaux`)
+
+1. **Niveaux et hauteurs** : lus sur les coupes et façades. Les étiquettes « RDJ, RDC,
+   Étage 1… Terrasse » alignées verticalement sont prises en compte. Quand plusieurs
+   coupes ou façades sont cotées, le programme retient la médiane des écarts et signale
+   les divergences. Une « Toiture » à moins de 2,5 m au-dessus de la terrasse est un
+   acrotère ou un édicule, pas un niveau.
+2. **Planche de chaque niveau** : choisie d'après son titre. « ÉTAGE COURANT 1 ET 3 »
+   couvre tous les étages courants. Quand plusieurs planches se disputent un niveau
+   (par exemple « ensemble RDC » avec les clôtures et « aménagement RDC »), le
+   programme retient celle dont les poteaux se superposent le mieux aux étages voisins.
+3. **Calage** : toutes les planches sont ramenées dans le repère de l'étage le plus haut,
+   par superposition des poteaux. Les repères d'axes peuvent changer d'un niveau à l'autre.
+4. **Plancher haut de chaque étage** : il est porté par les poteaux de l'étage, et son
+   contour est celui du plan de l'étage supérieur (balcons compris). Les zones d'un étage
+   non couvertes par l'étage du dessus (cour, rampe) sont signalées.
+5. **Continuité verticale** : un poteau superposé garde le même repère P… à tous les
+   niveaux. Un poteau qui ne descend pas est traité ainsi :
+   - s'il est **sur un mur** de l'étage inférieur, sa charge est transmise au mur
+     (voile et semelle filante à vérifier) ;
+   - s'il est **sur une poutre**, il devient une charge ponctuelle et la poutre est
+     signalée comme **poutre de transfert** ;
+   - **sinon**, sa charge est reportée sur le poteau le plus proche, avec l'alerte
+     « structure à revoir ».
+6. **Descente de charges** : du haut vers le bas, en gardant la charge d'exploitation de
+   chaque plancher séparément. La dégression est ainsi exacte, même avec des transferts.
+   Les tests vérifient l'équilibre global (tout ce qui est appliqué arrive aux fondations
+   ou aux murs).
+
 ## Hypothèses et limites actuelles
 
-- Bâtiment à ossature poteaux-poutres, **étages identiques** (un plan d'étage courant + nombre de niveaux).
+- Bâtiment à ossature poteaux-poutres. Sans `--tous-niveaux`, les étages sont supposés
+  identiques (un plan d'étage courant + nombre de niveaux).
 - Poteaux en compression centrée, lf = 0,7·l0. Leur section est augmentée automatiquement si elle est insuffisante.
 - Poutres : moments par **méthode forfaitaire simplifiée**. Un avertissement apparaît si ses
   conditions ne sont pas remplies (rapport de portées, Q > 2G).

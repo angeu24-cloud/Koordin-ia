@@ -44,10 +44,14 @@ class BeamLoad:
 
 @dataclass
 class ColumnStorey:
-    storey: int          # 1 = rez-de-chaussée (le plus chargé)
+    storey: int          # 1 = étage le plus bas (le plus chargé)
     g: float             # kN cumulés en pied de poteau
     q: float             # kN cumulés après dégression
     q_raw: float         # kN cumulés sans dégression
+    b: float = 0.0       # section du poteau à cet étage (m)
+    h: float = 0.0
+    height: float = 0.0  # hauteur d'étage (m)
+    origin: str = ""     # « » ; « naissant » (porté par une poutre / un poteau) ; « sur mur »
 
 
 @dataclass
@@ -66,18 +70,60 @@ class _UnitBeam:
 
 
 @dataclass
-class TakedownResult:
-    floor_loads: dict[str, BeamLoad] = field(default_factory=dict)   # étage courant
-    roof_loads: dict[str, BeamLoad] = field(default_factory=dict)    # terrasse
-    columns: dict[str, list[ColumnStorey]] = field(default_factory=dict)
-    lines: list[BeamLine] = field(default_factory=list)
-    column_direct_area: dict[str, float] = field(default_factory=dict)
+class StoreyLoads:
+    index: int                    # 0 = étage le plus bas
+    name: str
+    floor_name: str
+    roof: bool
+    beam_loads: dict[str, "BeamLoad"] = field(default_factory=dict)
+    lines: list["BeamLine"] = field(default_factory=list)
+    direct_area: dict[str, float] = field(default_factory=dict)
     slab_area: float = 0.0
+    point_loads: dict[str, list[tuple[float, float, float, str]]] = field(default_factory=dict)  # poutre → (t, G, Q, poteau)
+
+
+@dataclass
+class WallSupport:
+    """Poteau d'un étage reposant sur un mur de l'étage inférieur."""
+    column_id: str
+    storey: int        # indice (1 = bas) de l'étage dont le mur reçoit la charge
+    x: float
+    y: float
+    g: float
+    q: float
+
+
+@dataclass
+class TakedownResult:
+    storeys: list[StoreyLoads] = field(default_factory=list)          # du bas vers le haut
+    columns: dict[str, list[ColumnStorey]] = field(default_factory=dict)
+    wall_supports: list[WallSupport] = field(default_factory=list)
     surface_g_floor: float = 0.0
     surface_q_floor: float = 0.0
     surface_g_roof: float = 0.0
     surface_q_roof: float = 0.0
     warnings: list[str] = field(default_factory=list)
+
+    # --- accès simplifiés (plan unique) ---
+    @property
+    def roof_loads(self) -> dict[str, "BeamLoad"]:
+        return self.storeys[-1].beam_loads
+
+    @property
+    def floor_loads(self) -> dict[str, "BeamLoad"]:
+        return self.storeys[-2].beam_loads if len(self.storeys) > 1 else self.storeys[-1].beam_loads
+
+    @property
+    def lines(self) -> list["BeamLine"]:
+        return self.storeys[-1].lines
+
+    @property
+    def slab_area(self) -> float:
+        return self.storeys[-1].slab_area
+
+    @property
+    def column_direct_area(self) -> dict[str, float]:
+        return self.storeys[-1].direct_area
 
 
 def degression_coef(m: int) -> float:
@@ -211,107 +257,207 @@ def distribute(bld: Building, mask: SlabMask, floor_type: str) -> tuple[dict[str
     return unit, direct
 
 
-def compute_takedown(bld: Building, ls: LoadSettings) -> TakedownResult:
-    res = TakedownResult()
-    cols = bld.column_map()
-    beams = bld.beam_map()
-    res.lines = beam_lines(bld)
+def compute_takedown(model, ls: LoadSettings) -> TakedownResult:
+    """Descente de charges d'un plan unique (Building) ou d'un projet multi-niveaux (Project)."""
+    from .project import Project
 
+    proj = model if isinstance(model, Project) else Project.from_building(model)
+    return compute_project(proj, ls)
+
+
+def _on_wall(plan: Building, x: float, y: float, tol: float = 0.15) -> bool:
+    for x0, y0, x1, y1, t in plan.walls:
+        if abs(y1 - y0) < 1e-6:  # mur horizontal
+            if min(x0, x1) - tol <= x <= max(x0, x1) + tol and abs(y - y0) <= t / 2 + tol:
+                return True
+        elif abs(x1 - x0) < 1e-6:
+            if min(y0, y1) - tol <= y <= max(y0, y1) + tol and abs(x - x0) <= t / 2 + tol:
+                return True
+    return False
+
+
+def _beam_under(plan: Building, x: float, y: float, tol: float = 0.35) -> tuple[str, float] | None:
+    """Poutre passant sous le point (x, y) : (id, abscisse depuis le poteau de départ)."""
+    cols = plan.column_map()
+    best = None
+    for b in plan.beams:
+        c1, c2 = cols[b.start], cols[b.end]
+        L = b.length(cols)
+        if L <= 0:
+            continue
+        ux, uy = (c2.x - c1.x) / L, (c2.y - c1.y) / L
+        t = (x - c1.x) * ux + (y - c1.y) * uy
+        d = abs((x - c1.x) * uy - (y - c1.y) * ux)
+        if 0.05 * L <= t <= 0.95 * L and d <= tol and (best is None or d < best[2]):
+            best = (b.id, t, d)
+    return (best[0], best[1]) if best else None
+
+
+def compute_project(proj, ls: LoadSettings) -> TakedownResult:
+    res = TakedownResult()
     res.surface_g_floor = ls.g_floor + ls.g_finishes
     res.surface_q_floor = ls.q_floor
     res.surface_g_roof = ls.g_floor + ls.g_roof_extra
     res.surface_q_roof = ls.q_roof
+    N = proj.n
+    cache: dict[int, tuple] = {}
 
-    mask = slab_mask(bld)
-    if mask is None:
-        res.warnings.append("Aucun contour de plancher : seules les charges propres des éléments sont prises en compte.")
-        unit = {b.id: _UnitBeam() for b in bld.beams}
-        direct = {c.id: 0.0 for c in bld.columns}
-    else:
-        res.slab_area = mask.area
-        unit, direct = distribute(bld, mask, ls.floor_type)
-    res.column_direct_area = direct
-    if sum(direct.values()) > 0.05 * max(res.slab_area, 1e-9):
-        res.warnings.append(
-            f"{sum(direct.values()):.1f} m² de plancher sans poutre en vis-à-vis, reportés directement sur le "
-            "poteau le plus proche (vérifier les porte-à-faux et ajouter des poutres si nécessaire)."
-        )
+    def unit_of(plan: Building):
+        key = id(plan)
+        if key not in cache:
+            mask = slab_mask(plan)
+            if mask is None:
+                unit = {b.id: _UnitBeam() for b in plan.beams}
+                direct = {c.id: 0.0 for c in plan.columns}
+                area = 0.0
+            else:
+                unit, direct = distribute(plan, mask, ls.floor_type)
+                area = mask.area
+            cache[key] = (unit, direct, area, _edge_beams(plan, mask), beam_lines(plan))
+        return cache[key]
 
-    # Poutres de rive : peu de plancher d'un côté → façade
-    def level_loads(g: float, q: float, roof: bool) -> dict[str, BeamLoad]:
-        out: dict[str, BeamLoad] = {}
-        for b in bld.beams:
+    # charge arrivant en tête de chaque poteau de l'étage courant : id → (G, vecteur Q par plancher)
+    carried: dict[str, tuple[float, np.ndarray, float, float]] = {}
+    storey_loads: list[StoreyLoads] = [None] * N  # type: ignore[list-item]
+    col_results: dict[str, list[ColumnStorey]] = {}
+
+    for s in range(N - 1, -1, -1):
+        st = proj.storeys[s]
+        plan = st.plan
+        roof = s == N - 1
+        g_s = res.surface_g_roof if roof else res.surface_g_floor
+        q_s = res.surface_q_roof if roof else res.surface_q_floor
+        unit, direct, area, edges, lines = unit_of(plan)
+        cols = plan.column_map()
+        sl = StoreyLoads(s, st.name, proj.floor_label(s), roof, lines=lines, direct_area=direct, slab_area=area)
+        if area and sum(direct.values()) > 0.05 * area and not (proj.single_plan and s < N - 1):
+            res.warnings.append(
+                f"{sl.floor_name} : {sum(direct.values()):.1f} m² de plancher sans poutre en vis-à-vis, reportés "
+                "directement sur le poteau le plus proche (vérifier les porte-à-faux, ajouter des poutres)."
+            )
+
+        # --- poteaux de l'étage supérieur qui ne continuent pas ici
+        extra_g: dict[str, float] = {c.id: 0.0 for c in plan.columns}
+        extra_q: dict[str, np.ndarray] = {c.id: np.zeros(N) for c in plan.columns}
+        points: dict[str, list[tuple[float, float, np.ndarray, str]]] = {}
+        for cid, (g, qv, x, y) in carried.items():
+            if cid in cols:
+                extra_g[cid] += g
+                extra_q[cid] += qv
+                continue
+            if _on_wall(plan, x, y):
+                res.wall_supports.append(WallSupport(cid, s + 1, x, y, float(g), float(qv.sum())))
+                res.warnings.append(f"Poteau {cid} ({proj.storeys[s + 1].name}) : repose sur un mur de "
+                                    f"{st.name} — charge transmise au mur (voile à vérifier, semelle filante).")
+                continue
+            under = _beam_under(plan, x, y)
+            if under:
+                bid, t = under
+                points.setdefault(bid, []).append((t, g, qv, cid))
+                res.warnings.append(f"Poteau naissant {cid} ({proj.storeys[s + 1].name}) porté par la poutre "
+                                    f"{bid} du {sl.floor_name} : POUTRE DE TRANSFERT à étudier.")
+            elif plan.columns:
+                near = min(plan.columns, key=lambda c: (c.x - x) ** 2 + (c.y - y) ** 2)
+                dist = ((near.x - x) ** 2 + (near.y - y) ** 2) ** 0.5
+                extra_g[near.id] += g
+                extra_q[near.id] += qv
+                res.warnings.append(f"Poteau naissant {cid} ({proj.storeys[s + 1].name}) sans poutre dessous : "
+                                    f"charge reportée sur {near.id} à {dist:.1f} m — structure à revoir.")
+
+        # --- charges des poutres
+        beam_q_vec: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+        for b in plan.beams:
             L = b.length(cols)
             u = unit[b.id]
             w = CONCRETE * b.b * b.h
-            if not roof and ls.facade_load and b.id in edge_beams:
+            if not roof and ls.facade_load and b.id in edges:
                 w += ls.facade_load
-            out[b.id] = BeamLoad(
-                g_tot=g * u.area + w * L, q_tot=q * u.area,
-                g_m0=g * u.m0 + w * L ** 2 / 8, q_m0=q * u.m0,
-                g_rs=g * u.rs + w * L / 2, g_re=g * u.re + w * L / 2,
-                q_rs=q * u.rs, q_re=q * u.re, trib_area=u.area,
+            bl = BeamLoad(
+                g_tot=g_s * u.area + w * L, q_tot=q_s * u.area,
+                g_m0=g_s * u.m0 + w * L ** 2 / 8, q_m0=q_s * u.m0,
+                g_rs=g_s * u.rs + w * L / 2, g_re=g_s * u.re + w * L / 2,
+                q_rs=q_s * u.rs, q_re=q_s * u.re, trib_area=u.area,
             )
-        return out
+            rs_v, re_v = np.zeros(N), np.zeros(N)
+            rs_v[s], re_v[s] = q_s * u.rs, q_s * u.re
+            for t, g, qv, cid in points.get(b.id, []):
+                a, bb = t, L - t
+                qsum = float(qv.sum())
+                bl.g_tot += g
+                bl.q_tot += qsum
+                bl.g_m0 += g * a * bb / L
+                bl.q_m0 += qsum * a * bb / L
+                bl.g_rs += g * bb / L
+                bl.g_re += g * a / L
+                bl.q_rs += qsum * bb / L
+                bl.q_re += qsum * a / L
+                rs_v += qv * bb / L
+                re_v += qv * a / L
+                sl.point_loads.setdefault(b.id, []).append((round(t, 2), g, qsum, cid))
+            sl.beam_loads[b.id] = bl
+            beam_q_vec[b.id] = (rs_v, re_v)
 
-    edge_beams = _edge_beams(bld, mask)
-    res.floor_loads = level_loads(res.surface_g_floor, res.surface_q_floor, roof=False)
-    res.roof_loads = level_loads(res.surface_g_roof, res.surface_q_roof, roof=True)
+        # --- coefficients de continuité
+        coef: dict[tuple[str, str], float] = {}
+        if ls.continuity:
+            for line in lines:
+                n = len(line.beams)
+                targets = {1: 1.15} if n == 2 else ({1: 1.10, n - 1: 1.10} if n >= 3 else {})
+                for idx, f in targets.items():
+                    sup = line.supports[idx]
+                    for bid in (line.beams[idx - 1], line.beams[idx]):
+                        coef[(bid, sup)] = f
 
-    # Coefficients de continuité sur les appuis
-    coef: dict[tuple[str, str], float] = {}
-    if ls.continuity:
-        for line in res.lines:
-            n = len(line.beams)
-            targets: dict[int, float] = {}
-            if n == 2:
-                targets = {1: 1.15}
-            elif n >= 3:
-                targets = {1: 1.10, n - 1: 1.10}
-            for idx, f in targets.items():
-                sup = line.supports[idx]
-                for bid in (line.beams[idx - 1], line.beams[idx]):
-                    coef[(bid, sup)] = f
-
-    def reactions(loads: dict[str, BeamLoad], g: float, q: float) -> dict[str, tuple[float, float]]:
-        r = {c.id: [direct[c.id] * g, direct[c.id] * q] for c in bld.columns}
-        for b in bld.beams:
-            bl = loads[b.id]
-            for cid, rg, rq in ((b.start, bl.g_rs, bl.q_rs), (b.end, bl.g_re, bl.q_re)):
+        # --- poteaux de l'étage
+        new_carried: dict[str, tuple[float, np.ndarray, float, float]] = {}
+        g_col = {c.id: direct[c.id] * g_s + extra_g[c.id] for c in plan.columns}
+        q_col = {c.id: extra_q[c.id].copy() for c in plan.columns}
+        for c in plan.columns:
+            q_col[c.id][s] += direct[c.id] * q_s
+        for b in plan.beams:
+            bl = sl.beam_loads[b.id]
+            rs_v, re_v = beam_q_vec[b.id]
+            for cid, rg, rq in ((b.start, bl.g_rs, rs_v), (b.end, bl.g_re, re_v)):
                 f = coef.get((b.id, cid), 1.0)
-                r[cid][0] += f * rg
-                r[cid][1] += f * rq
-        return {k: (v[0], v[1]) for k, v in r.items()}
+                g_col[cid] += f * rg
+                q_col[cid] += f * rq
+        for c in plan.columns:
+            g = float(g_col[c.id] + CONCRETE * c.b * c.h * st.height)
+            qv = q_col[c.id]
+            q_raw = float(qv.sum())
+            # dégression : Q0 = terrasse, Q1… = planchers inférieurs portés
+            m = N - 1 - s
+            if ls.degression and m >= 2:
+                q = float(qv[N - 1] + degression_coef(m) * qv[s:N - 1].sum())
+            else:
+                q = q_raw
+            origin = "" if (s == N - 1 or c.id in carried) else "départ"
+            col_results.setdefault(c.id, []).append(
+                ColumnStorey(storey=s + 1, g=g, q=q, q_raw=q_raw, b=c.b, h=c.h, height=st.height, origin=origin))
+            new_carried[c.id] = (g, qv, c.x, c.y)
+        carried = new_carried
+        storey_loads[s] = sl
 
-    r_floor = reactions(res.floor_loads, res.surface_g_floor, res.surface_q_floor)
-    r_roof = reactions(res.roof_loads, res.surface_g_roof, res.surface_q_roof)
+    res.storeys = storey_loads
+    res.columns = col_results
 
-    n = bld.n_levels
-    for c in bld.columns:
-        pp_col = CONCRETE * c.b * c.h * bld.floor_height
-        storeys: list[ColumnStorey] = []
-        g_cum = 0.0
-        q_list: list[float] = []  # Q0 (terrasse), Q1, Q2…
-        for level in range(n, 0, -1):  # du haut vers le bas
-            g_lvl, q_lvl = r_roof[c.id] if level == n else r_floor[c.id]
-            g_cum += g_lvl + pp_col
-            q_list.append(q_lvl)
-            m = len(q_list) - 1
-            q_raw = sum(q_list)
-            q_cum = q_list[0] + degression_coef(m) * sum(q_list[1:]) if (ls.degression and m >= 2) else q_raw
-            storeys.append(ColumnStorey(storey=level, g=g_cum, q=q_cum, q_raw=q_raw))
-        res.columns[c.id] = storeys
-
-    # Contrôle des conditions de la méthode forfaitaire
-    for line in res.lines:
-        spans = [beams[b].length(cols) for b in line.beams]
-        for x, y in zip(spans, spans[1:]):
-            if not 0.8 <= x / y <= 1.25:
-                res.warnings.append(
-                    f"File {'-'.join(line.supports)} : rapport de portées {x:.2f}/{y:.2f} hors [0,8 ; 1,25] — "
-                    "moments forfaitaires à confirmer par un calcul de continuité (Caquot)."
-                )
-                break
+    # Contrôle des conditions de la méthode forfaitaire (une fois par plan)
+    seen: set[int] = set()
+    for st in proj.storeys:
+        if id(st.plan) in seen:
+            continue
+        seen.add(id(st.plan))
+        cols = st.plan.column_map()
+        beams = st.plan.beam_map()
+        for line in beam_lines(st.plan):
+            spans = [beams[b].length(cols) for b in line.beams]
+            for x, y in zip(spans, spans[1:]):
+                if not 0.8 <= x / y <= 1.25:
+                    res.warnings.append(
+                        f"{'' if proj.single_plan else st.name + ' — '}File {'-'.join(line.supports)} : rapport de "
+                        f"portées {x:.2f}/{y:.2f} hors [0,8 ; 1,25] — moments forfaitaires à confirmer (Caquot)."
+                    )
+                    break
     if ls.q_floor > max(2 * res.surface_g_floor, 5.0):
         res.warnings.append("Q > max(2G ; 5 kN/m²) : la méthode forfaitaire n'est pas applicable.")
     return res

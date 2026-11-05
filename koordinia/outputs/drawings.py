@@ -70,13 +70,13 @@ def _cartouche(msp, x, y, title: str, res: ProjectResult, subtitle: str = ""):
     _rect(msp, x, y, x + 7.0, y + 1.6, "CARTOUCHE")
     _text(msp, x + 3.5, y + 1.25, title, 0.25, "CARTOUCHE")
     _text(msp, x + 3.5, y + 0.85, subtitle or f"Règlement : {res.code.name}", 0.14, "CARTOUCHE")
-    _text(msp, x + 3.5, y + 0.50, f"Source : {Path(res.building.source.split(' (')[0]).name}", 0.12, "CARTOUCHE")
+    _text(msp, x + 3.5, y + 0.50, f"Source : {Path(res.project.source.split(' (')[0]).name}", 0.12, "CARTOUCHE")
     _text(msp, x + 3.5, y + 0.20, "Koordin-IA — document à vérifier et viser par l'ingénieur structure",
           0.10, "CARTOUCHE")
 
 
-def _axes(msp, res: ProjectResult, ext: float = 1.5):
-    b = res.building
+def _axes(msp, res: ProjectResult, ext: float = 1.5, plan=None):
+    b = plan or res.building
     if not b.grid_x or not b.grid_y:
         return
     x0, x1 = min(b.grid_x) - ext, max(b.grid_x) + ext
@@ -119,8 +119,8 @@ def _column_section_at(res: ProjectResult, cid: str, storey: int):
     return next(r.design for r in res.columns if r.column_id == cid and r.storey == storey)
 
 
-def _draw_columns(msp, res: ProjectResult, storey: int, label: bool = True):
-    for c in res.building.columns:
+def _draw_columns(msp, res: ProjectResult, storey: int, label: bool = True, plan=None):
+    for c in (plan or res.building).columns:
         d = _column_section_at(res, c.id, storey)
         x0, y0, x1, y1 = c.x - d.b / 2, c.y - d.h / 2, c.x + d.b / 2, c.y + d.h / 2
         _rect(msp, x0, y0, x1, y1, "POTEAUX")
@@ -131,14 +131,29 @@ def _draw_columns(msp, res: ProjectResult, storey: int, label: bool = True):
                   align=TextEntityAlignment.BOTTOM_LEFT)
 
 
-def plan_coffrage(res: ProjectResult, path: Path, level: str, storey: int) -> Path:
+def plan_coffrage(res: ProjectResult, path: Path, level: str, storey: int, *, plan=None,
+                  title: str | None = None) -> Path:
+    """Plan de coffrage du plancher porté par les poteaux de l'étage `storey` (1 = bas)."""
     doc = _new_doc()
     msp = doc.modelspace()
-    b = res.building
+    b = plan or res.building
     cols = b.column_map()
-    _axes(msp, res)
+    _axes(msp, res, plan=b)
     _slab_outline(msp, b)
-    _draw_columns(msp, res, storey)
+    _draw_columns(msp, res, storey, plan=b)
+    # Poteaux de l'étage supérieur qui naissent sur ce plancher
+    proj = res.project
+    if not proj.single_plan and storey < proj.n:
+        above = proj.storeys[storey].plan
+        on_wall = {w.column_id for w in res.takedown.wall_supports if w.storey == storey}
+        for c in above.columns:
+            if c.id not in cols:
+                x0, y0, x1, y1 = c.x - c.b / 2, c.y - c.h / 2, c.x + c.b / 2, c.y + c.h / 2
+                _rect(msp, x0, y0, x1, y1, "POTEAUX")
+                msp.add_line((x0, y0), (x1, y1), dxfattribs={"layer": "POTEAUX", "color": 1})
+                msp.add_line((x0, y1), (x1, y0), dxfattribs={"layer": "POTEAUX", "color": 1})
+                tag = "sur mur" if c.id in on_wall else "naissant"
+                _text(msp, x1 + 0.08, y0 - 0.12, f"{c.id} {tag}", 0.12, align=TextEntityAlignment.TOP_LEFT)
     for bm in b.beams:
         c1, c2 = cols[bm.start], cols[bm.end]
         w = bm.b / 2
@@ -175,7 +190,7 @@ def plan_coffrage(res: ProjectResult, path: Path, level: str, storey: int) -> Pa
         else:
             txt = "Dalle pleine (2 sens)"
         _text(msp, cx, cy + 0.35, f"{p.id} — {txt}", 0.12)
-    title = "PLAN DE COFFRAGE — " + ("TERRASSE" if level == "terrasse" else "ÉTAGE COURANT")
+    title = title or ("PLAN DE COFFRAGE — " + ("TERRASSE" if level == "terrasse" else "ÉTAGE COURANT"))
     _cartouche(msp, (max(b.grid_x) if b.grid_x else 0) - 5.5, (min(b.grid_y) if b.grid_y else 0) - 4.5, title, res)
     doc.saveas(path)
     return path
@@ -184,17 +199,18 @@ def plan_coffrage(res: ProjectResult, path: Path, level: str, storey: int) -> Pa
 def plan_fondations(res: ProjectResult, path: Path, types: dict[str, str]) -> Path:
     doc = _new_doc()
     msp = doc.modelspace()
-    b = res.building
-    _axes(msp, res, ext=2.0)
-    fmap = {f.column_id: f.design for f in res.footings}
-    for c in b.columns:
-        f = fmap[c.id]
-        _rect(msp, c.x - f.A / 2, c.y - f.B / 2, c.x + f.A / 2, c.y + f.B / 2, "SEMELLES")
-        _text(msp, c.x, c.y - f.B / 2 - 0.15, f"{types[c.id]} {f.A * 100:.0f}x{f.B * 100:.0f} h={f.h * 100:.0f}",
-              0.12, align=TextEntityAlignment.TOP_CENTER)
-    _draw_columns(msp, res, 1, label=False)
+    b = res.base_plan
+    _axes(msp, res, ext=2.0, plan=b)
+    for ft in res.footings:
+        f = ft.design
+        x, y = ft.x, ft.y
+        _rect(msp, x - f.A / 2, y - f.B / 2, x + f.A / 2, y + f.B / 2, "SEMELLES")
+        tag = " (sous mur)" if ft.on_wall else ""
+        _text(msp, x, y - f.B / 2 - 0.15, f"{types.get(ft.column_id, '')} {f.A * 100:.0f}x{f.B * 100:.0f} "
+              f"h={f.h * 100:.0f}{tag}", 0.12, align=TextEntityAlignment.TOP_CENTER)
+    _draw_columns(msp, res, 1, label=False, plan=b)
     _cartouche(msp, (max(b.grid_x) if b.grid_x else 0) - 5.5, (min(b.grid_y) if b.grid_y else 0) - 5.0,
-               "PLAN DE FONDATIONS — SEMELLES ISOLÉES", res,
+               "PLAN DE FONDATIONS — SEMELLES", res,
                f"Règlement : {res.code.name} — σsol = {res.sigma_sol:g} MPa")
     doc.saveas(path)
     return path
@@ -215,7 +231,7 @@ def group_types(res: ProjectResult) -> tuple[list[ElementType], list[ElementType
         d = r.design
         key = (d.b, d.h, str(d.bars), str(d.stirrups))
         t = col_types.setdefault(key, ElementType(f"PT{len(col_types) + 1}", key, data=d))
-        t.members.append(f"{r.column_id}/N{r.storey}")
+        t.members.append(f"{r.column_id}/{r.storey_name or 'N' + str(r.storey)}")
     beam_types: dict[tuple, ElementType] = {}
     for r in res.beams:
         d = r.design

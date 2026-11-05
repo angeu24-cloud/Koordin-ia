@@ -72,6 +72,7 @@ class Building:
     origin: list[float] = field(default_factory=lambda: [0.0, 0.0])  # origine dans le dessin (m)
     axis_x: list[str] = field(default_factory=list)   # repères des files selon X (lus sur le plan)
     axis_y: list[str] = field(default_factory=list)
+    walls: list[list[float]] = field(default_factory=list)  # murs [x0, y0, x1, y1, épaisseur]
 
     # ------------------------------------------------------------------ helpers
     def column_map(self) -> dict[str, Column]:
@@ -100,6 +101,7 @@ class Building:
             origin=d.get("origin", [0.0, 0.0]),
             axis_x=d.get("axis_x", []),
             axis_y=d.get("axis_y", []),
+            walls=d.get("walls", []),
         )
 
     def save(self, path: str | Path) -> None:

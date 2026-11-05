@@ -30,7 +30,72 @@ def _add_import_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--calque-poteaux", help="Calque des poteaux (nom exact ou expression régulière)")
     p.add_argument("--sans-contour", action="store_true",
                    help="Ne pas déduire le contour du plancher des murs (mailles de la trame uniquement)")
+    p.add_argument("--tous-niveaux", action="store_true",
+                   help="Modéliser chaque niveau avec sa propre planche (niveaux lus sur les coupes/façades)")
+    p.add_argument("--affectation", help="Planche par niveau, ex. « RDC=3,ETAGE 2=4 » (numéros de « planches »)")
+    p.add_argument("--hauteurs", help="Hauteurs imposées, ex. « RDC=3.29,RDJ=3.40 » (m)")
+    p.add_argument("--liste-niveaux", help="Liste des niveaux si les coupes n'en donnent pas, "
+                                          "ex. « RDC,ETAGE 1,ETAGE 2,TERRASSE »")
     p.add_argument("-o", "--sortie", default="resultats", help="Dossier de sortie")
+
+
+def _parse_map(txt: str | None, cast) -> dict:
+    from .levels import canonical_level
+
+    out = {}
+    for part in (txt or "").split(","):
+        if "=" in part:
+            k, v = part.split("=", 1)
+            out[canonical_level(k.strip()) or k.strip().upper()] = cast(v.strip())
+    return out
+
+
+def _import_project(args):
+    from .importers import import_plan
+    from .project import build_project
+
+    drawing = import_plan(args.plan, units=args.unites, scale=args.echelle, page=args.page)
+    proj = build_project(
+        drawing, overrides=_parse_map(args.affectation, int), heights=_parse_map(args.hauteurs, float),
+        levels_spec=[n.strip() for n in args.liste_niveaux.split(",")] if args.liste_niveaux else None,
+        column_layer=args.calque_poteaux, max_span=args.portee_max, footprint=not args.sans_contour,
+        default_height=args.hauteur,
+    )
+    return proj, drawing
+
+
+def _control_plans(proj, drawing, out: Path) -> list[Path]:
+    """Un plan de contrôle par planche utilisée."""
+    from .outputs.drawings import plan_controle
+    from .sheets import crop, find_sheets
+
+    sheets = {s.title: s for s in find_sheets(drawing)}
+    files, done = [], set()
+    for k, st in enumerate(proj.storeys):
+        title = st.sheet.split(" (")[0]
+        if title in done or title not in sheets:
+            continue
+        done.add(title)
+        path = out / f"controle_{k + 1:02d}_{_slug(st.name)}.dxf"
+        files.append(plan_controle(st.plan, crop(drawing, sheets[title].bbox), path))
+    return files
+
+
+def _json_default(o):
+    """Types numpy → types Python pour l'export JSON."""
+    import numpy as np
+
+    if isinstance(o, np.generic):
+        return o.item()
+    raise TypeError(f"{type(o).__name__} non sérialisable")
+
+
+def _slug(name: str) -> str:
+    import re
+    import unicodedata
+
+    s = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()
+    return re.sub(r"[^a-z0-9]+", "_", s).strip("_")
 
 
 def _import_model(args) -> tuple[Building, object | None]:
@@ -62,6 +127,21 @@ def cmd_detecter(args) -> int:
 
     out = Path(args.sortie)
     out.mkdir(parents=True, exist_ok=True)
+    if args.tous_niveaux:
+        proj, drawing = _import_project(args)
+        proj.save(out / "projet.json")
+        files = _control_plans(proj, drawing, out)
+        for w in dict.fromkeys(proj.warnings):
+            print("•", w)
+        print()
+        for st in proj.storeys:
+            print(f"  {st.name:10s} h = {st.height:.2f} m  {len(st.plan.columns):3d} poteaux  "
+                  f"{len(st.plan.beams):3d} poutres  ← {st.sheet}")
+        print(f"\nProjet enregistré : {out / 'projet.json'}")
+        for f in files:
+            print("Plan de contrôle :", f)
+        print(f"Ensuite : koordinia calculer --modele {out / 'projet.json'} --norme bael -o {out}")
+        return 0
     bld, drawing = _import_model(args)
     bld.save(out / "modele.json")
     plan_controle(bld, drawing, out / "controle_modele.dxf")
@@ -81,21 +161,30 @@ def cmd_calculer(args) -> int:
 
     out = Path(args.sortie)
     out.mkdir(parents=True, exist_ok=True)
+    from .project import Project
+
     drawing = None
     if args.modele:
-        bld = Building.load(args.modele)
-        if args.niveaux_set:
-            bld.n_levels = args.niveaux
-        if args.hauteur_set:
-            bld.floor_height = args.hauteur
+        proj = Project.load(args.modele)
+        if proj.single_plan:
+            bld = proj.storeys[0].plan
+            if args.niveaux_set:
+                bld.n_levels = args.niveaux
+            if args.hauteur_set:
+                bld.floor_height = args.hauteur
+            proj = Project.from_building(bld)
+    elif args.plan and args.tous_niveaux:
+        proj, drawing = _import_project(args)
+        proj.save(out / "projet.json")
     elif args.plan:
         bld, drawing = _import_model(args)
         bld.save(out / "modele.json")
+        proj = Project.from_building(bld)
     else:
-        print("Indiquez un plan (.dwg/.dxf/.pdf) ou --modele modele.json", file=sys.stderr)
+        print("Indiquez un plan (.dwg/.dxf/.pdf) ou --modele modele.json / projet.json", file=sys.stderr)
         return 2
-    if not bld.columns:
-        for w in bld.warnings:
+    if not proj.storeys or not proj.storeys[-1].plan.columns:
+        for w in proj.warnings:
             print("•", w)
         print("Aucun poteau exploitable : calcul impossible.", file=sys.stderr)
         return 1
@@ -107,38 +196,48 @@ def cmd_calculer(args) -> int:
         degression=not args.sans_degression,
     )
     code = get_code(args.norme, fc=args.fc, fy=args.fe, cover=args.enrobage)
-    res = run(bld, ls, code, sigma_sol=args.sol)
+    res = run(proj, ls, code, sigma_sol=args.sol)
 
     col_t, beam_t, foot_t = group_types(res)
     foot_names = {m: t.name for t in foot_t for m in t.members}
     files = []
-    if bld.n_levels > 1:
-        files.append(plan_coffrage(res, out / "plan_coffrage_etage_courant.dxf", "courant", 2))
-    files.append(plan_coffrage(res, out / "plan_coffrage_terrasse.dxf", "terrasse", bld.n_levels))
+    if proj.single_plan:
+        bld = proj.storeys[0].plan
+        if proj.n > 1:
+            files.append(plan_coffrage(res, out / "plan_coffrage_etage_courant.dxf", "courant", 2))
+        files.append(plan_coffrage(res, out / "plan_coffrage_terrasse.dxf", "terrasse", proj.n))
+        if drawing is not None:
+            files.append(plan_controle(bld, drawing, out / "controle_modele.dxf"))
+    else:
+        for k, st in enumerate(proj.storeys):
+            label = proj.floor_label(k)
+            files.append(plan_coffrage(res, out / f"coffrage_{k + 1:02d}_{_slug(label)}.dxf", label, k + 1,
+                                       plan=st.plan, title=f"PLAN DE COFFRAGE — {label.upper()}"))
+        if drawing is not None:
+            files += _control_plans(proj, drawing, out)
     files.append(plan_fondations(res, out / "plan_fondations.dxf", foot_names))
     files.append(plan_ferraillage(res, out / "plans_ferraillage.dxf", col_t, beam_t, foot_t))
-    if drawing is not None:
-        files.append(plan_controle(bld, drawing, out / "controle_modele.dxf"))
     files += list(write_report(res, out))
 
     summary = {
         "norme": code.name,
-        "niveaux": bld.n_levels,
+        "niveaux": [{"nom": st.name, "hauteur_m": st.height, "planche": st.sheet} for st in proj.storeys],
         "metre": quantities(res),
-        "poteaux": [{"id": r.column_id, "niveau": r.storey, "Nser_kN": round(r.nser, 1), "Nu_kN": round(r.nu, 1),
+        "poteaux": [{"id": r.column_id, "niveau": r.storey_name or r.storey, "Nser_kN": round(r.nser, 1), "Nu_kN": round(r.nu, 1),
                      "section_cm": f"{r.design.b * 100:.0f}x{r.design.h * 100:.0f}", "armatures": str(r.design.bars),
                      "cadres": str(r.design.stirrups), "ok": r.design.ok} for r in res.columns],
         "poutres": [{"id": r.beam_id, "niveau": r.level, "portee_m": round(r.span, 2),
                      "section_cm": f"{r.design.b * 100:.0f}x{r.design.h * 100:.0f}",
                      "inf": str(r.design.bars_bottom), "sup": str(r.design.bars_top),
                      "cadres": str(r.design.stirrups), "ok": r.design.ok} for r in res.beams],
-        "semelles": [{"poteau": f.column_id, "A_m": f.design.A, "B_m": f.design.B, "h_m": f.design.h,
+        "semelles": [{"poteau": f.column_id, "sous_mur": f.on_wall, "A_m": f.design.A, "B_m": f.design.B, "h_m": f.design.h,
                       "nappe_A": str(f.design.bars_x), "nappe_B": str(f.design.bars_y), "ok": f.design.ok}
                      for f in res.footings],
         "avertissements": list(dict.fromkeys(res.warnings)),
         "hypotheses_charges": asdict(ls),
     }
-    (out / "resultats.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+    (out / "resultats.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False, default=_json_default),
+                                        encoding="utf-8")
     files.append(out / "resultats.json")
 
     for w in dict.fromkeys(res.warnings):
@@ -166,6 +265,31 @@ def cmd_planches(args) -> int:
         x0, y0, x1, y1 = sh.bbox
         tag = "plan" if sh.is_plan else "    "
         print(f"{sh.index:3d}. [{tag}] {sh.title}   ({x1 - x0:.0f} × {y1 - y0:.0f} m)")
+    return 0
+
+
+def cmd_niveaux(args) -> int:
+    from .importers import import_plan
+    from .levels import display_name
+    from .project import candidate_resolver, plan_storeys, resolve_candidates
+
+    drawing = import_plan(args.plan, units=args.unites, scale=args.echelle, page=args.page)
+    storeys, sheets, notes = plan_storeys(
+        drawing, overrides=_parse_map(args.affectation, int), heights=_parse_map(args.hauteurs, float),
+        levels_spec=[n.strip() for n in args.liste_niveaux.split(",")] if args.liste_niveaux else None,
+        default_height=args.hauteur)
+    notes += resolve_candidates(storeys, sheets, *candidate_resolver(drawing, args.calque_poteaux))
+    for n in notes:
+        print("•", n)
+    z = 0.0
+    print()
+    for sp in storeys:
+        title = sp.sheet.title if sp.sheet else "— aucune —"
+        no = sp.sheet.index if sp.sheet else "-"
+        print(f"  {display_name(sp.name):10s} +{z:6.2f}  h = {sp.height:.2f} m   planche {no} « {title} » ({sp.reason})")
+        z += sp.height
+    print(f"  {'Terrasse':10s} +{z:6.2f}")
+    print("\nPour corriger : --affectation « RDC=3 » (numéro de planche), --hauteurs « RDC=3.30 ».")
     return 0
 
 
@@ -208,6 +332,10 @@ def main(argv: list[str] | None = None) -> int:
     pl = sub.add_parser("planches", help="Lister les planches (cadres) d'un dessin")
     _add_import_args(pl)
     pl.set_defaults(func=cmd_planches)
+
+    nv = sub.add_parser("niveaux", help="Lister les niveaux (coupes/façades) et les planches affectées")
+    _add_import_args(nv)
+    nv.set_defaults(func=cmd_niveaux)
 
     e = sub.add_parser("exemple", help="Générer un plan d'exemple (DXF + PDF)")
     e.add_argument("-o", "--sortie", default="exemple")
