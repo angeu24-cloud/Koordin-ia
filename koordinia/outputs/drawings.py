@@ -262,9 +262,25 @@ def plan_fondations(res: ProjectResult, path: Path, types: dict[str, str]) -> Pa
         tag = " (sous mur)" if ft.on_wall else ""
         _text(msp, x, y - f.B / 2 - 0.15, f"{types.get(ft.column_id, '')} {f.A * 100:.0f}x{f.B * 100:.0f} "
               f"h={f.h * 100:.0f}{tag}", 0.12, align=TextEntityAlignment.TOP_CENTER)
+    if res.raft:
+        _slab_outline(msp, type("P", (), {"slab": b.footprint or b.slab})(), "SEMELLES")
+        _text(msp, (max(b.grid_x) + min(b.grid_x)) / 2 if b.grid_x else 0, (min(b.grid_y) if b.grid_y else 0) - 1.0,
+              f"RADIER GÉNÉRAL ép. {res.raft['epaisseur'] * 100:.0f} cm — {res.raft['aciers']} (2 nappes, 2 directions)",
+              0.2, "SEMELLES")
+    for p_ in res.piles:
+        n = p_["n_pieux"] or 1
+        for k in range(n):
+            ang = 2 * math.pi * k / n
+            r0 = 0.0 if n == 1 else 0.6
+            msp.add_circle((p_["x"] + r0 * math.cos(ang), p_["y"] + r0 * math.sin(ang)), 0.25,
+                           dxfattribs={"layer": "SEMELLES"})
+        _text(msp, p_["x"], p_["y"] - 1.0, f"{p_['poteau']} : {p_['n_pieux'] or '?'} pieu(x) — Nser {p_['nser']:.0f} kN",
+              0.12, "SEMELLES")
     _draw_columns(msp, res, 1, label=False, plan=b)
+    title = {"pieux": "PLAN DE FONDATIONS — PIEUX", "radier": "PLAN DE FONDATIONS — RADIER"}.get(
+        res.foundation_type, "PLAN DE FONDATIONS — SEMELLES")
     _cartouche(msp, (max(b.grid_x) if b.grid_x else 0) - 5.5, (min(b.grid_y) if b.grid_y else 0) - 5.0,
-               "PLAN DE FONDATIONS — SEMELLES", res,
+               title, res,
                f"Règlement : {res.code.name} — σsol = {res.sigma_sol:g} MPa")
     doc.saveas(path)
     return path

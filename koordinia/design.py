@@ -1,6 +1,7 @@
 """Enchaînement du calcul : descente de charges → dimensionnement des éléments."""
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -124,6 +125,10 @@ class ProjectResult:
     balconies: list[BalconyResult] = field(default_factory=list)
     transfers: list[TransferResult] = field(default_factory=list)
     stairs: list = field(default_factory=list)
+    piles: list = field(default_factory=list)
+    raft: object = None
+    foundation_type: str = "superficielles"
+    geotech: object = None
     warnings: list[str] = field(default_factory=list)
 
     @property
@@ -146,13 +151,51 @@ def _support_coefs(n_spans: int) -> list[float]:
     return [0.2] + inner + [0.2]
 
 
-def run(model, ls: LoadSettings, code, sigma_sol: float = 0.20, max_column: float = 1.0) -> ProjectResult:
+def raft_design(code, base: Building, supports: list, sigma_sol: float, depth: float | None) -> dict:
+    """Radier général : contrainte moyenne, épaisseur (portée/20 et poinçonnement), aciers."""
+    from .slab import SlabMask
+
+    fp = base.footprint or base.slab
+    area = SlabMask.from_dict(fp).area if fp else 0.0
+    if area <= 0:
+        xs = [s[1] for s in supports]
+        ys = [s[2] for s in supports]
+        area = (max(xs) - min(xs) + 1.0) * (max(ys) - min(ys) + 1.0)
+    span = max([b.length(base.column_map()) for b in base.beams] or [5.0])
+    n_ser = sum(s[3] for s in supports)
+    n_u = sum(s[4] for s in supports)
+    nu_max = max(s[4] for s in supports)
+    a_max = max(supports, key=lambda s: s[4])
+    fc = getattr(code, "fc28", getattr(code, "fck", 25.0))
+    h = max(0.30, math.ceil(span / 20 / 0.05 - 1e-9) * 0.05)
+    while h < 2.0:
+        uc = 2 * (a_max[5] + a_max[6] + 2 * h)          # périmètre du feuillet moyen (m)
+        if nu_max / 1000 <= 0.045 * uc * h * fc / 1.5:  # poinçonnement sans armatures (BAEL A.5.2,42)
+            break
+        h = round(h + 0.05, 2)
+    pp = 25 * area * h
+    sigma = (n_ser + pp) / area / 1000
+    q_net_u = (n_u) / area                              # réaction nette ELU (kN/m²)
+    mu = q_net_u * span ** 2 / 10                       # dalle continue sur appuis (par m)
+    as_m, _, notes = code.flexure(mu, 1.0, h)
+    from .stairs import _bars_per_meter
+
+    return {"aire": area, "epaisseur": h, "portee": span, "sigma": sigma, "ok": sigma <= sigma_sol + 1e-9,
+            "nser": n_ser, "nu": n_u, "mu": mu, "as": as_m, "aciers": _bars_per_meter(as_m),
+            "ancrage": depth, "notes": notes}
+
+
+def run(model, ls: LoadSettings, code, sigma_sol: float | None = None, max_column: float = 1.0,
+        geotech=None) -> ProjectResult:
     """Dimensionne un plan unique (Building) ou un projet multi-niveaux (Project)."""
     from .project import Project
 
     proj = model if isinstance(model, Project) else Project.from_building(model)
     td = compute_takedown(proj, ls)
+    if sigma_sol is None:
+        sigma_sol = geotech.sigma_sol if (geotech and geotech.sigma_sol) else 0.20
     res = ProjectResult(proj, ls, code, td, sigma_sol)
+    res.geotech = geotech
     seen_w: list[str] = []
     # remarques des plans : une seule fois par planche, avec les étages concernés
     by_sheet: dict[str, list] = {}
@@ -306,17 +349,45 @@ def run(model, ls: LoadSettings, code, sigma_sol: float = 0.20, max_column: floa
 
     # --------------------------------------------------------------- fondations
     base = proj.storeys[0].plan
+    depth = geotech.depth if geotech else None
+    ftype = geotech.foundation if geotech else "superficielles"
+    res.foundation_type = ftype
+    if geotech:
+        if not geotech.valide:
+            res.warnings.append("DONNÉES GÉOTECHNIQUES EXTRAITES AUTOMATIQUEMENT ET NON VALIDÉES : contrôler "
+                                "geotech.json puis passer « valide » à true.")
+        wd = geotech.water_depth
+        if wd is not None and depth is not None and wd <= depth + 0.5:
+            res.warnings.append(f"Nappe à {wd:g} m pour un ancrage à {depth:g} m : fouilles en eau, rabattement, "
+                                "sous-pressions (déjaugeage) à étudier.")
+    supports = []  # (repère, x, y, Nser, Nu, a, b, sous mur)
     for c in base.columns:
         r = next(r for r in res.columns if r.column_id == c.id and r.storey == 1)
-        fd = code.footing(r.design.b, r.design.h, r.nser, r.nu, sigma_sol)
-        res.footings.append(FootingResult(c.id, fd, c.x, c.y))
+        supports.append((c.id, c.x, c.y, r.nser, r.nu, r.design.b, r.design.h, False))
     for ws in td.wall_supports:
-        # le mur descend jusqu'aux fondations : charge ponctuelle sur semelle filante (pré-dimensionnement
-        # en semelle isolée équivalente sous un tronçon de mur de 20 cm)
-        nser, nu = code.els(ws.g, ws.q), code.elu(ws.g, ws.q)
-        fd = code.footing(0.20, 0.20, nser, nu, sigma_sol)
-        fd.notes.append("Sous mur : à intégrer à une semelle filante")
-        res.footings.append(FootingResult(ws.column_id, fd, ws.x, ws.y, on_wall=True))
+        supports.append((ws.column_id, ws.x, ws.y, code.els(ws.g, ws.q), code.elu(ws.g, ws.q), 0.20, 0.20, True))
+
+    if ftype == "pieux":
+        q_pile = float(geotech.charge_pieu.value) if geotech and geotech.charge_pieu else None
+        for cid, x, y, nser, nu, a, b, wall in supports:
+            n = max(1, math.ceil(nser / q_pile)) if q_pile else None
+            res.piles.append({"poteau": cid, "x": x, "y": y, "nser": nser, "nu": nu, "n_pieux": n, "sous_mur": wall})
+        res.warnings.append("Fondations profondes (pieux) selon le rapport géotechnique : charges en tête données "
+                            "par appui" + ("" if q_pile else " ; charge admissible par pieu à préciser") +
+                            ". Longrines et massifs de liaison à dimensionner.")
+    elif ftype == "radier":
+        res.raft = raft_design(code, base, supports, sigma_sol, depth)
+        if not res.raft["ok"]:
+            res.warnings.append(f"Radier : contrainte moyenne {res.raft['sigma']:.3f} MPa > {sigma_sol:g} MPa.")
+    else:
+        for cid, x, y, nser, nu, a, b, wall in supports:
+            fd = code.footing(a, b, nser, nu, sigma_sol, depth=depth)
+            if wall:
+                fd.notes.append("Sous mur : à intégrer à une semelle filante")
+            res.footings.append(FootingResult(cid, fd, x, y, on_wall=wall))
+        if ftype == "filantes":
+            res.warnings.append("Le rapport géotechnique recommande des semelles filantes : les semelles isolées "
+                                "calculées donnent les largeurs à regrouper par file.")
 
     # Recouvrement des semelles → semelles filantes / radier
     fts = [(f.column_id, (f.x, f.y), f.design) for f in res.footings]

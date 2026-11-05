@@ -227,6 +227,56 @@ et chaque projet peut le compléter dans `koordinia.json` (clé `usages.regles`)
   les plans de coffrage.
 - Option `--sans-locaux` : désactive la lecture des locaux (charges uniformes).
 
+## Poutres de transfert automatiques
+
+Pour un poteau qui ne descend pas et qui ne repose ni sur une poutre ni sur un mur, le
+programme cherche les **deux appuis les plus proches de part et d'autre**, en X et en Y,
+au niveau inférieur. Ces appuis peuvent être un poteau aligné, un mur perpendiculaire ou
+une **poutre existante** (poutre secondaire). Il crée une poutre de transfert de portée
+au plus 12 m (`transfer_max_span`).
+
+- Les poteaux d'une même poutre sont regroupés. La poutre est calculée en isostatique
+  (charges ponctuelles et poids propre), puis agrandie si nécessaire.
+- Ses réactions descendent dans les poteaux, les murs ou les poutres d'appui ; une
+  poutre d'appui reçoit une charge ponctuelle et est recalculée.
+- Faute d'appui, l'alerte « ajouter un poteau ou un voile » est émise.
+
+## Escaliers
+
+Chaque escalier détecté sur un plan est calculé avec la hauteur d'étage :
+- **géométrie** : nombre de marches (h ≈ 17 cm), giron par Blondel (2h + g ≈ 63 cm),
+  une ou deux volées selon la largeur de la cage, contrôle d'encombrement et
+  d'emmarchement ;
+- **paillasse et palier** sur poutres palières : épaisseur ≥ L/30, charges réelles,
+  Mt = 0,85·M0 et Ma = 0,30·M0 ;
+- **ferraillage** : aciers inférieurs, chapeaux, répartition, et charge transmise aux
+  poutres palières ;
+- **contrôle** du forfait utilisé dans la descente de charges ;
+- **sorties** : coupe ferraillée dans les plans de ferraillage.
+
+## Rapport géotechnique
+
+```bash
+koordinia geotech rapport_sol.pdf -o Projets/Immeuble_X     # → geotech.json (« valide » : false)
+# contrôler / corriger geotech.json, passer « valide » à true, puis dans koordinia.json :
+#   "sol": { "geotech": "geotech.json" }
+koordinia calculer --config Projets/Immeuble_X/koordinia.json
+koordinia geotech --vierge -o Projets/Immeuble_X              # rapport scanné : saisie manuelle
+```
+
+- **Données lues** : contrainte admissible ELS et contrainte ELU (bars, kPa, MPa, kg/cm²
+  et t/m², convertis), profondeur d'ancrage, type de fondation recommandé, nappe,
+  tassement, classe de sol sismique, charge admissible et diamètre des pieux.
+- **Traçabilité** : chaque valeur est accompagnée de la phrase du rapport (avec sa page)
+  d'où elle vient. Tant que `valide` est à false, la note de calcul l'indique en rouge.
+- **Fondations selon le rapport** :
+  - semelles isolées avec la profondeur d'ancrage et le poids des terres ;
+  - **radier** : contrainte moyenne, épaisseur (portée/20 et poinçonnement), aciers ;
+  - **pieux** : charges en tête et nombre de pieux par appui.
+- **Alertes** : nappe au-dessus du fond de fouille, semelles filantes recommandées.
+- **Priorité de la contrainte du sol** : `--sol` (ou `sol.sol` dans la configuration),
+  puis le rapport, puis 0,20 MPa.
+
 ## Hypothèses et limites actuelles
 
 - Bâtiment à ossature poteaux-poutres. Sans `--tous-niveaux`, les étages sont supposés

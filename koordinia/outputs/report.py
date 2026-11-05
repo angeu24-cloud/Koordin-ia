@@ -91,7 +91,22 @@ def build_html(res: ProjectResult) -> str:
         out.append(f"<li>Bâtiment : {proj.n} étages ({', '.join(st.name for st in proj.storeys)}) + terrasse ; "
                    "longueur de flambement lf = 0,7·l0</li>")
     out.append(f"<li>Plancher : {'corps creux (porteur dans un sens)' if ls.floor_type == 'corps_creux' else 'dalle pleine'}</li>")
-    out.append(f"<li>Contrainte admissible du sol (ELS) : σsol = {_f(res.sigma_sol, 2)} MPa</li></ul>")
+    out.append(f"<li>Contrainte admissible du sol (ELS) : σsol = {_f(res.sigma_sol, 3)} MPa"
+               f"{' (rapport géotechnique)' if res.geotech and res.geotech.sigma_sol == res.sigma_sol else ''}</li></ul>")
+    geo = res.geotech
+    if geo:
+        from ..geotech import summary_lines
+
+        banner = ("" if geo.valide else "<p class='ko'>Valeurs extraites automatiquement du rapport et NON VALIDÉES "
+                  "par l'ingénieur.</p>")
+        out.append(f"<h3>Données géotechniques</h3>{banner}<p class='small'>Source : {e(geo.fichier)}</p>"
+                   "<table><tr><th>Donnée</th><th>Valeur</th><th>Extrait du rapport</th></tr>")
+        for k, v, src in summary_lines(geo):
+            if v != "—":
+                out.append(f"<tr><td>{e(k)}</td><td>{e(v)}</td><td class='small'>{e(src)}</td></tr>")
+        out.append("</table>")
+        for r in geo.remarques:
+            out.append(f"<p class='warn'>{e(r)}</p>")
 
     out.append("<h2>2. Charges surfaciques</h2><table><tr><th>Niveau</th><th>G (kN/m²)</th><th>Q (kN/m²)</th>"
                "<th>Détail G</th></tr>")
@@ -250,7 +265,22 @@ def build_html(res: ProjectResult) -> str:
     out.append("<p class='small'>Moments : méthode forfaitaire simplifiée — Mt = 0,85·M0 (travée de rive) / "
                "0,75·M0 (intermédiaire) ; Ma = 0,2·M0 (rive), 0,6·M0 (2 travées), 0,5/0,4·M0 (≥ 3 travées).</p>")
 
-    out.append("<h2>7. Fondations — semelles isolées</h2>")
+    if res.foundation_type == "pieux":
+        out.append("<h2>7. Fondations profondes — charges en tête de pieux</h2>")
+        out.append("<table><tr><th>Appui</th><th>Nser (kN)</th><th>Nu (kN)</th><th>Nombre de pieux</th></tr>")
+        for p_ in res.piles:
+            out.append(f"<tr><td>{p_['poteau']}{' (mur)' if p_['sous_mur'] else ''}</td><td>{_f(p_['nser'])}</td>"
+                       f"<td>{_f(p_['nu'])}</td><td>{p_['n_pieux'] or 'à préciser'}</td></tr>")
+        out.append("</table>")
+    if res.raft:
+        r_ = res.raft
+        out.append("<h2>7. Fondations — radier général</h2>")
+        out.append(f"<p>Aire {_f(r_['aire'], 1)} m² ; épaisseur {r_['epaisseur'] * 100:.0f} cm (portée {_f(r_['portee'], 2)} m "
+                   f"/ 20 et poinçonnement) ; contrainte moyenne ELS {_f(r_['sigma'], 3)} MPa "
+                   f"({'OK' if r_['ok'] else '<span class=ko>NON</span>'} ≤ {_f(res.sigma_sol, 3)}) ; "
+                   f"moment {_f(r_['mu'])} kN.m/m ; aciers {_f(r_['as'], 2)} cm²/m ({r_['aciers']}) "
+                   "par face et par direction.</p>")
+    out.append("<h2>7. Fondations — semelles isolées</h2>" if res.footings else "")
     out.append("<table><tr><th>Poteau</th><th>A×B×h (cm)</th><th>Nser (kN)</th><th>Nu (kN)</th><th>σ (MPa)</th>"
                "<th>Ax (cm²)</th><th>// A</th><th>Ay (cm²)</th><th>// B</th><th>État</th></tr>")
     for f in res.footings:

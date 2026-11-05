@@ -79,7 +79,9 @@ CONFIG_TEMPLATE = {
         "facade": 0.0,
         "degression": True,
     },
-    "sol": {"_aide": "contrainte admissible ELS (MPa), d'après le rapport géotechnique", "sol": 0.20},
+    "sol": {"_aide": ("geotech : geotech.json produit par « koordinia geotech rapport.pdf » (à valider) ; "
+                      "sol : contrainte admissible ELS imposée (MPa), prioritaire sur le rapport ; 0,20 si rien"),
+            "geotech": None, "sol": None},
     "usages": {
         "_aide": ("Règles d'usage propres au projet, prioritaires sur le catalogue koordinia/data/usages.json. "
                   "Exemple : {\"nom\": \"Salle serveurs\", \"motifs\": [\"SERVEUR\"], \"q\": 7.5, \"type\": \"local\"}"),
@@ -87,7 +89,7 @@ CONFIG_TEMPLATE = {
     },
 }
 
-_PATH_KEYS = ("plan", "modele", "sortie")
+_PATH_KEYS = ("plan", "modele", "sortie", "geotech")
 
 
 def _flatten(cfg: dict) -> dict:
@@ -136,6 +138,35 @@ def apply_config(args, parser: argparse.ArgumentParser, raw: list[str]) -> None:
             args.hauteur_set = True
     if "sortie" not in given and "sortie" not in cfg:
         args.sortie = str(path.parent / "resultats")
+
+
+def cmd_geotech(args) -> int:
+    from .geotech import GeotechData, Value, extract, summary_lines
+
+    out = Path(args.sortie)
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / "geotech.json"
+    if args.vierge:
+        g = GeotechData(fichier="saisie manuelle")
+        g.contrainte_admissible_els = Value(0.20, "MPa", "à saisir d'après le rapport")
+        g.profondeur_ancrage = Value(1.5, "m", "à saisir d'après le rapport")
+        g.type_fondation = Value("superficielles", "", "superficielles | filantes | radier | pieux")
+        g.save(path)
+        print(f"{path} créé : remplacez les valeurs par celles du rapport, puis passez « valide » à true.")
+        return 0
+    if not args.rapport:
+        raise ValueError("Indiquez le rapport géotechnique (PDF, TXT, DOCX) ou --vierge.")
+    g = extract(args.rapport)
+    g.save(path)
+    print(f"Rapport : {args.rapport}\n")
+    for k, v, src in summary_lines(g):
+        print(f"  {k:30s} {v:16s} {src[:110]}")
+    for r in g.remarques:
+        print("•", r)
+    print(f"\nValeurs enregistrées dans {path} avec « valide » : false.")
+    print("Contrôlez-les (et corrigez-les si besoin) puis passez « valide » à true ;")
+    print(f"ensuite : koordinia calculer … --geotech {path}   (ou « sol » → « geotech » dans koordinia.json)")
+    return 0
 
 
 def cmd_init(args) -> int:
@@ -330,7 +361,15 @@ def cmd_calculer(args) -> int:
     code = get_code(args.norme, fc=args.fc, fy=args.fe, cover=args.enrobage)
     if args.nom:
         proj.name = args.nom
-    res = run(proj, ls, code, sigma_sol=args.sol)
+    geo = None
+    if args.geotech:
+        from .geotech import GeotechData, extract
+
+        gp = Path(args.geotech)
+        geo = GeotechData.load(gp) if gp.suffix.lower() == ".json" else extract(gp)
+        if gp.suffix.lower() != ".json":
+            geo.save(out / "geotech.json")
+    res = run(proj, ls, code, sigma_sol=args.sol, geotech=geo)
 
     col_t, beam_t, foot_t = group_types(res)
     foot_names = {m: t.name for t in foot_t for m in t.members}
@@ -367,6 +406,9 @@ def cmd_calculer(args) -> int:
                      "section_cm": f"{r.design.b * 100:.0f}x{r.design.h * 100:.0f}",
                      "inf": str(r.design.bars_bottom), "sup": str(r.design.bars_top),
                      "cadres": str(r.design.stirrups), "ok": r.design.ok} for r in res.beams],
+        "fondations": res.foundation_type,
+        "radier": res.raft,
+        "pieux": res.piles,
         "semelles": [{"poteau": f.column_id, "sous_mur": f.on_wall, "A_m": f.design.A, "B_m": f.design.B, "h_m": f.design.h,
                       "nappe_A": str(f.design.bars_x), "nappe_B": str(f.design.bars_y), "ok": f.design.ok}
                      for f in res.footings],
@@ -464,7 +506,9 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--q-terrasse", type=float, default=1.00, help="Exploitation terrasse (kN/m²)")
     c.add_argument("--facade", type=float, default=0.0, help="Maçonnerie sur poutres de rive (kN/m)")
     c.add_argument("--sans-degression", action="store_true", help="Ne pas appliquer la dégression de Q")
-    c.add_argument("--sol", type=float, default=0.20, help="Contrainte admissible du sol (MPa)")
+    c.add_argument("--sol", type=float, default=None,
+                   help="Contrainte admissible du sol (MPa) ; sinon celle du rapport géotechnique, sinon 0,20")
+    c.add_argument("--geotech", help="Données géotechniques : geotech.json (validé) ou rapport PDF à lire")
     c.set_defaults(func=cmd_calculer)
 
     pl = sub.add_parser("planches", help="Lister les planches (cadres) d'un dessin")
@@ -474,6 +518,12 @@ def main(argv: list[str] | None = None) -> int:
     nv = sub.add_parser("niveaux", help="Lister les niveaux (coupes/façades) et les planches affectées")
     _add_import_args(nv)
     nv.set_defaults(func=cmd_niveaux)
+
+    gt = sub.add_parser("geotech", help="Lire un rapport géotechnique (PDF/TXT/DOCX) → geotech.json à valider")
+    gt.add_argument("rapport", nargs="?", help="Rapport géotechnique")
+    gt.add_argument("--vierge", action="store_true", help="Créer un geotech.json à remplir à la main")
+    gt.add_argument("-o", "--sortie", default=".", help="Dossier où écrire geotech.json")
+    gt.set_defaults(func=cmd_geotech)
 
     it = sub.add_parser("init", help="Créer le dossier d'un nouveau projet avec son fichier de configuration")
     it.add_argument("dossier", help="Dossier du projet")

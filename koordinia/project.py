@@ -206,6 +206,7 @@ def build_project(
         for c in plan.columns:
             c.id = global_id(c.x, c.y)
         upper = models[storeys[k + 1].sheet.index] if k + 1 < len(storeys) else base
+        plan.footprint = base.slab
         plan.slab = upper.slab
         plan.zones = copy.deepcopy(upper.zones)
         # Terrasses / espaces verts de l'étage supérieur situés au-dessus de cet étage : dalle à créer

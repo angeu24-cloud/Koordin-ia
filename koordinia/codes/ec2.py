@@ -145,5 +145,6 @@ class EC2:
                           bottom, top, stirrups, ok, notes)
 
     # --------------------------------------------------------------- fondations
-    def footing(self, a: float, b: float, nser: float, nu: float, sigma_sol: float) -> FootingDesign:
-        return footing_design(a, b, nser, nu, sigma_sol, self.fyd)
+    def footing(self, a: float, b: float, nser: float, nu: float, sigma_sol: float,
+                depth: float | None = None) -> FootingDesign:
+        return footing_design(a, b, nser, nu, sigma_sol, self.fyd, depth=depth)

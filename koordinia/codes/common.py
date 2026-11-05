@@ -127,7 +127,7 @@ def stirrup_spacing(asw_s_cm2_per_m: float, d: int, legs: int, s_max: float) -> 
 
 def footing_design(
     a: float, b: float, nser_col: float, nu_col: float, sigma_sol: float, fsu: float,
-    *, cover: float = 0.05, max_ratio: float = 1.5,
+    *, cover: float = 0.05, max_ratio: float = 1.5, depth: float | None = None, soil_weight: float = 18.0,
 ) -> FootingDesign:
     """Semelle isolée sous poteau, méthode des bielles (BAEL / pratique EC2).
 
@@ -146,6 +146,8 @@ def footing_design(
         d = max((A - a) / 4, (B - b) / 4, 0.15)
         h = round_up(max(0.30, d + cover))
         pp = 25 * A * B * h
+        if depth:  # terres au-dessus de la semelle jusqu'au terrain (fût de poteau négligé)
+            pp += soil_weight * A * B * max(0.0, depth - h)
         nser, nu = nser_col + pp, nu_col + 1.35 * pp
         if nser / (A * B) <= q_sol + 1e-6:
             break
