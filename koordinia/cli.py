@@ -82,6 +82,12 @@ CONFIG_TEMPLATE = {
     "sol": {"_aide": ("geotech : geotech.json produit par « koordinia geotech rapport.pdf » (à valider) ; "
                       "sol : contrainte admissible ELS imposée (MPa), prioritaire sur le rapport ; 0,20 si rien"),
             "geotech": None, "sol": None},
+    "devis": {
+        "_aide": ("bpu : bordereau de prix importé (koordinia bpu BORDEREAU.xls) ; categorie : 1ERE à 4EME "
+                  "(terrain des fouilles) ; dosage : béton de fondation (kg/m³) ; hourdis : « 16 + 4 », « 20 + 5 »… "
+                  "(vide = déduit du poids du plancher) ; tva : 0.18"),
+        "bpu": None, "categorie": "2EME", "dosage": 350, "hourdis": None, "tva": 0.18,
+    },
     "usages": {
         "_aide": ("Règles d'usage propres au projet, prioritaires sur le catalogue koordinia/data/usages.json. "
                   "Exemple : {\"nom\": \"Salle serveurs\", \"motifs\": [\"SERVEUR\"], \"q\": 7.5, \"type\": \"local\"}"),
@@ -99,6 +105,9 @@ def _flatten(cfg: dict) -> dict:
             continue
         if k == "usages" and isinstance(v, dict):
             out["usages"] = v.get("regles") or None
+            continue
+        if k == "devis" and isinstance(v, dict):
+            out["devis"] = {kk: vv for kk, vv in v.items() if not kk.startswith("_")}
             continue
         if isinstance(v, dict):
             out.update(_flatten(v))
@@ -136,6 +145,8 @@ def apply_config(args, parser: argparse.ArgumentParser, raw: list[str]) -> None:
             args.niveaux_set = True
         if key == "hauteur":
             args.hauteur_set = True
+    if isinstance(getattr(args, "devis", None), dict) and args.devis.get("bpu"):
+        args.devis["bpu"] = str((path.parent / args.devis["bpu"]).resolve())
     if "sortie" not in given and "sortie" not in cfg:
         args.sortie = str(path.parent / "resultats")
 
@@ -243,6 +254,59 @@ def _control_plans(proj, drawing, out: Path) -> list[Path]:
     return files
 
 
+def _hourdis_for(g_floor: float) -> str:
+    for lim, name in ((2.95, "16 + 4"), (3.45, "20 + 5"), (4.05, "25 + 5")):
+        if g_floor <= lim:
+            return name
+    return "30 + 5"
+
+
+def _write_devis(res, args, out: Path, ls) -> list[Path]:
+    """Devis quantitatif et estimatif (Excel + JSON) ; prix du bordereau s'il est fourni."""
+    try:
+        from .costing.bpu import Bordereau, import_bpu
+        from .costing.devis import build_devis, write_excel
+        from .costing.metre import DevisSettings
+    except ImportError:  # pragma: no cover
+        return []
+    cfg = dict(getattr(args, "devis", None) or {})
+    if getattr(args, "bpu", None):
+        cfg["bpu"] = args.bpu
+    bpu = None
+    src = cfg.pop("bpu", None)
+    if src:
+        sp = Path(src)
+        bpu = Bordereau.load(sp) if sp.suffix.lower() == ".json" else import_bpu(sp)
+    if not cfg.get("hourdis"):
+        cfg["hourdis"] = _hourdis_for(ls.g_floor)
+    try:
+        import openpyxl  # noqa: F401
+    except ImportError:
+        print("• Devis Excel indisponible : installez openpyxl.")
+        return []
+    dv = build_devis(res, bpu, DevisSettings.from_dict(cfg))
+    (out / "devis.json").write_text(json.dumps(dv.to_dict(), ensure_ascii=False, indent=1), encoding="utf-8")
+    files = [write_excel(dv, out / "devis.xlsx"), out / "devis.json"]
+    print(f"Devis : {dv.total_ht:,.0f} {dv.currency} HT".replace(",", " ") +
+          (f" (bordereau {dv.bpu_source})" if bpu else " (quantités seules, pas de bordereau)"))
+    return files
+
+
+def cmd_bpu(args) -> int:
+    from .costing.bpu import import_bpu
+
+    b = import_bpu(args.bordereau)
+    out = Path(args.sortie)
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / "bpu.json"
+    b.save(path)
+    for n in b.notes:
+        print("•", n)
+    print(f"Bordereau enregistré : {path}")
+    print("Dans koordinia.json : \"devis\": {\"bpu\": \"bpu.json\"}  (ou calculer … --bpu bpu.json)")
+    return 0
+
+
 def _json_default(o):
     """Types numpy → types Python pour l'export JSON."""
     import numpy as np
@@ -336,6 +400,11 @@ def cmd_calculer(args) -> int:
             if args.hauteur_set:
                 bld.floor_height = args.hauteur
             proj = Project.from_building(bld)
+    elif args.plan and Path(args.plan).suffix.lower() == ".ifc":
+        from .interop.ifc_import import import_ifc
+
+        proj = import_ifc(args.plan, max_span=args.portee_max)
+        proj.save(out / "projet.json")
     elif args.plan and args.tous_niveaux:
         proj, drawing = _import_project(args)
         proj.save(out / "projet.json")
@@ -394,6 +463,13 @@ def cmd_calculer(args) -> int:
     from .outputs.viewer import write_viewer
 
     files.append(write_viewer(res, out))
+    try:
+        from .interop.ifc_export import export_ifc
+
+        files.append(export_ifc(res, out / "modele.ifc"))
+    except ImportError:
+        print("• Export IFC indisponible : installez ifcopenshell (pip install ifcopenshell).")
+    files += _write_devis(res, args, out, ls)
 
     config_used = {k: v for k, v in vars(args).items()
                    if k not in ("func", "niveaux_set", "hauteur_set", "cmd") and not callable(v)}
@@ -522,6 +598,8 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--sans-degression", action="store_true", help="Ne pas appliquer la dégression de Q")
     c.add_argument("--sol", type=float, default=None,
                    help="Contrainte admissible du sol (MPa) ; sinon celle du rapport géotechnique, sinon 0,20")
+    c.add_argument("--bpu", help="Bordereau de prix pour le devis : bpu.json, .xls, .xlsx ou .csv")
+    c.set_defaults(devis=None)
     c.add_argument("--geotech", help="Données géotechniques : geotech.json (validé) ou rapport PDF à lire")
     c.set_defaults(func=cmd_calculer)
 
@@ -532,6 +610,11 @@ def main(argv: list[str] | None = None) -> int:
     nv = sub.add_parser("niveaux", help="Lister les niveaux (coupes/façades) et les planches affectées")
     _add_import_args(nv)
     nv.set_defaults(func=cmd_niveaux)
+
+    bp = sub.add_parser("bpu", help="Importer un bordereau de prix (xls, xlsx, csv) → bpu.json")
+    bp.add_argument("bordereau")
+    bp.add_argument("-o", "--sortie", default=".")
+    bp.set_defaults(func=cmd_bpu)
 
     gt = sub.add_parser("geotech", help="Lire un rapport géotechnique (PDF/TXT/DOCX) → geotech.json à valider")
     gt.add_argument("rapport", nargs="?", help="Rapport géotechnique")

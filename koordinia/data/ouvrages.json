@@ -1,0 +1,27 @@
+{
+  "_aide": "Rattachement des ouvrages du métré aux lignes du bordereau de prix. motifs : expressions régulières cherchées dans le chemin « Lot > chapitre > désignation » du bordereau, en MAJUSCULES sans accents ; {categorie}, {dosage} et {hourdis} sont remplacés par les réglages du devis. La première ligne du bordereau qui contient tous les motifs donne le prix ; sinon le prix reste à saisir.",
+  "ouvrages": [
+    {"code": "TER-FOU", "lot": "TERRASSEMENTS", "designation": "Fouilles en puits pour semelles isolées", "unite": "m3", "motifs": ["FOUILLES EN PUITS", "{categorie} CATEGORIE"]},
+    {"code": "TER-FOR", "lot": "TERRASSEMENTS", "designation": "Fouilles en excavation (radier)", "unite": "m3", "motifs": ["FOUILLES EN EXCAVATION", "{categorie} CATEGORIE"]},
+    {"code": "TER-REM", "lot": "TERRASSEMENTS", "designation": "Remblais des fouilles", "unite": "m3", "motifs": ["REMBLAIS DES FOUILLES"]},
+    {"code": "TER-EVA", "lot": "TERRASSEMENTS", "designation": "Évacuation des déblais excédentaires", "unite": "m3", "motifs": ["EVACUATION DES DEBLAIS"]},
+    {"code": "GO-PRO", "lot": "GROS ŒUVRE", "designation": "Béton de propreté dosé à 150 kg/m³", "unite": "m3", "motifs": ["BETON DE PROPRETE", "150"]},
+    {"code": "GO-SEM", "lot": "GROS ŒUVRE", "designation": "Béton armé pour semelles (dosé à {dosage} kg/m³)", "unite": "m3", "motifs": ["BETON DE SEMELLE", "{dosage}"]},
+    {"code": "GO-RAD", "lot": "GROS ŒUVRE", "designation": "Béton armé pour radier (dosé à {dosage} kg/m³)", "unite": "m3", "motifs": ["BETON DE SEMELLE", "{dosage}"]},
+    {"code": "GO-AMO", "lot": "GROS ŒUVRE", "designation": "Béton armé pour amorces de poteaux", "unite": "m3", "motifs": ["POTEAUX ET RAIDISSEURS"]},
+    {"code": "GO-POT", "lot": "GROS ŒUVRE", "designation": "Béton armé pour poteaux", "unite": "m3", "motifs": ["POTEAUX ET RAIDISSEURS"]},
+    {"code": "GO-POU", "lot": "GROS ŒUVRE", "designation": "Béton armé pour poutres", "unite": "m3", "motifs": ["POUTRES, CHAINAGES"]},
+    {"code": "GO-TRF", "lot": "GROS ŒUVRE", "designation": "Béton armé pour poutres de transfert", "unite": "m3", "motifs": ["POUTRES, CHAINAGES"]},
+    {"code": "GO-DAL", "lot": "GROS ŒUVRE", "designation": "Béton armé pour dalles pleines", "unite": "m3", "motifs": ["BETON EN ELEVATION", "DALLE PLEINE"]},
+    {"code": "GO-BAL", "lot": "GROS ŒUVRE", "designation": "Béton armé pour balcons (dalle pleine en console)", "unite": "m3", "motifs": ["BETON EN ELEVATION", "DALLE PLEINE"]},
+    {"code": "GO-ESC", "lot": "GROS ŒUVRE", "designation": "Béton armé pour escaliers (paillasses et paliers)", "unite": "m3", "motifs": ["BETON EN ELEVATION", "ESCALIERS"]},
+    {"code": "GO-HOU", "lot": "GROS ŒUVRE", "designation": "Plancher à corps creux {hourdis} (poutrelles, hourdis, table de compression)", "unite": "m2", "motifs": ["HOURDIS", "{hourdis}"]},
+    {"code": "GO-HA", "lot": "GROS ŒUVRE", "designation": "Armatures en acier à haute adhérence", "unite": "kg", "motifs": ["HAUTE ADHERENCE"]},
+    {"code": "GO-CSE", "lot": "GROS ŒUVRE", "designation": "Coffrage de semelles", "unite": "m2", "motifs": ["COFFRAGE DE SEMELLES"]},
+    {"code": "GO-CAM", "lot": "GROS ŒUVRE", "designation": "Coffrage d'amorces de poteaux isolés", "unite": "m2", "motifs": ["AMORCE DE POTEAUX ISOLES"]},
+    {"code": "GO-CPO", "lot": "GROS ŒUVRE", "designation": "Coffrage de poteaux isolés", "unite": "m2", "motifs": ["COFFRAGE DE POTEAUX ISOLE"]},
+    {"code": "GO-CPU", "lot": "GROS ŒUVRE", "designation": "Coffrage de poutres", "unite": "m2", "motifs": ["COFFRAGES? DE POUTRES"]},
+    {"code": "GO-CDA", "lot": "GROS ŒUVRE", "designation": "Coffrage de dalles pleines, balcons et escaliers", "unite": "m2", "motifs": ["COFFRAGE DE DALLES PLEINES"]},
+    {"code": "GO-PIE", "lot": "FONDATIONS PROFONDES", "designation": "Pieux forés (selon rapport géotechnique)", "unite": "u", "motifs": ["PIEUX?"]}
+  ]
+}

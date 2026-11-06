@@ -23,8 +23,9 @@ from .storage import ROLES, Storage
 STATIC = Path(__file__).parent / "static"
 COOKIE = "koordinia_session"
 MAX_UPLOAD = 200 * 1024 * 1024
-PLAN_EXT = {".dwg", ".dxf", ".pdf"}
+PLAN_EXT = {".dwg", ".dxf", ".pdf", ".ifc"}
 REPORT_EXT = {".pdf", ".txt", ".docx"}
+BPU_EXT = {".xls", ".xlsx", ".xlsm", ".csv"}
 SAFE_NAME = re.compile(r"^[\w\-. ]{1,120}$")
 
 
@@ -111,6 +112,21 @@ def create_app(data_dir: str | Path | None = None, sync_jobs: bool | None = None
         cfg = read_cfg(pid)
         plan = store.project_dir(pid) / cfg["projet"]["plan"]
         lec = cfg.get("lecture", {})
+        if plan.suffix.lower() == ".ifc":
+            from ..interop.ifc_import import import_ifc
+
+            pj = import_ifc(plan)
+            z = 0.0
+            out = {"fichier": plan.name, "planches": [], "niveaux": [], "notes": pj.warnings, "multi": True,
+                   "ifc": True}
+            for st in pj.storeys:
+                out["niveaux"].append({"nom": st.name, "code": st.name, "altitude": round(z, 2), "hauteur": st.height,
+                                       "planche": None, "titre": "IFC", "raison": f"{len(st.plan.columns)} poteaux"})
+                z += st.height
+            (store.project_dir(pid) / "analyse.json").write_text(json.dumps(out, ensure_ascii=False, indent=1),
+                                                                 encoding="utf-8")
+            print(f"Modèle IFC lu : {len(pj.storeys)} étage(s).")
+            return
         drawing = import_plan(plan, units=lec.get("unites"), scale=lec.get("echelle"))
         sheets = find_sheets(drawing)
         out = {"fichier": plan.name, "planches": [
@@ -305,12 +321,14 @@ def create_app(data_dir: str | Path | None = None, sync_jobs: bool | None = None
     def put_config(pid: int, body: dict, user: dict = Depends(current_user)):
         project_access(pid, user, "editeur")
         cfg = read_cfg(pid)
-        for section in ("lecture", "reglement", "charges", "sol", "usages", "projet"):
+        for section in ("lecture", "reglement", "charges", "sol", "usages", "projet", "devis"):
             if isinstance(body.get(section), dict):
                 cur = cfg.setdefault(section, {})
                 for k, v in body[section].items():
                     if section == "projet" and k not in ("tous_niveaux",):
                         continue  # chemins gérés par le serveur
+                    if section == "devis" and k == "bpu":
+                        continue
                     cur[k] = v
         write_cfg(pid, cfg)
         store.touch(pid)
@@ -347,6 +365,35 @@ def create_app(data_dir: str | Path | None = None, sync_jobs: bool | None = None
         write_cfg(pid, cfg)
         store.log(pid, user["id"], "Données géotechniques " + ("validées" if g.valide else "modifiées"))
         return g.to_dict()
+
+    @app.post("/api/projets/{pid}/bpu")
+    async def upload_bpu(pid: int, fichier: UploadFile = File(...), user: dict = Depends(current_user)):
+        from ..costing.bpu import import_bpu
+
+        project_access(pid, user, "editeur")
+        path = await save_upload(pid, fichier, "prix", BPU_EXT)
+        try:
+            b = import_bpu(path)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        b.save(store.project_dir(pid) / "bpu.json")
+        cfg = read_cfg(pid)
+        cfg.setdefault("devis", {})["bpu"] = "bpu.json"
+        write_cfg(pid, cfg)
+        store.log(pid, user["id"], f"Bordereau de prix importé : {path.name} ({len(b.items)} articles)")
+        return {"source": b.source, "articles": len(b.items), "notes": b.notes}
+
+    @app.get("/api/projets/{pid}/devis")
+    def get_devis(pid: int, user: dict = Depends(current_user)):
+        project_access(pid, user)
+        d = store.project_dir(pid)
+        out = {"devis": None, "bordereau": None}
+        if (d / "resultats" / "devis.json").exists():
+            out["devis"] = json.loads((d / "resultats" / "devis.json").read_text(encoding="utf-8"))
+        if (d / "bpu.json").exists():
+            b = json.loads((d / "bpu.json").read_text(encoding="utf-8"))
+            out["bordereau"] = {"source": b.get("source"), "articles": len(b.get("items", [])), "notes": b.get("notes")}
+        return out
 
     # ------------------------------------------------------------------ calcul et résultats
     @app.post("/api/projets/{pid}/calcul")

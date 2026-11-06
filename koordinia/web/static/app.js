@@ -113,7 +113,7 @@ async function viewProjects() {
 
 // ------------------------------------------------------------------ projet
 const TABS = [["plan", "Plan & niveaux"], ["hypotheses", "Hypothèses"], ["geotech", "Géotechnique"],
-  ["calcul", "Calcul"], ["modele", "Modèle 2D / 3D"], ["fichiers", "Plans & note"], ["equipe", "Équipe"]];
+  ["calcul", "Calcul"], ["modele", "Modèle 2D / 3D"], ["devis", "Devis"], ["fichiers", "Plans & note"], ["equipe", "Équipe"]];
 
 async function loadProject(pid) { state.project = await api(`/api/projets/${pid}`); return state.project; }
 
@@ -135,7 +135,7 @@ async function viewProject(pid, tab) {
   document.querySelectorAll(".tabs button").forEach((b) => (b.onclick = () => go(`#/projet/${pid}/${b.dataset.tab}`)));
   const pane = document.getElementById("pane");
   ({ plan: paneplan, hypotheses: panehyp, geotech: panegeo, calcul: panecalc, modele: panemodel,
-     fichiers: panefiles, equipe: paneteam }[tab] || paneplan)(pane, p);
+     fichiers: panefiles, equipe: paneteam, devis: panedevis }[tab] || paneplan)(pane, p);
   const job = p.tache;
   if (job && (job.status === "en_attente" || job.status === "en_cours")) watchJob(job.id);
 }
@@ -167,11 +167,11 @@ function paneplan(el, p) {
   el.innerHTML = `
   <section class="card">
     <h2 style="margin-top:0">Plan de l'architecte</h2>
-    <p class="small muted">DWG, DXF ou PDF vectoriel. Un DWG peut contenir toutes les planches (RDC, étages, coupes, façades).</p>
+    <p class="small muted">DWG, DXF ou PDF vectoriel de l'architecte (un DWG peut contenir toutes les planches), ou maquette <b>IFC</b> exportée de Revit, ArchiCAD, Robot, CYPECAD, Graitec…</p>
     ${cfg.projet.plan ? `<p>Plan actuel : <b>${esc(cfg.projet.plan.split("/").pop())}</b></p>` : ""}
     ${canEdit() ? `<div class="drop" id="drop"><p>Déposez le fichier ici ou</p>
       <label class="button" style="display:inline-flex;color:#fff">Choisir un fichier
-      <input type="file" id="file" accept=".dwg,.dxf,.pdf" hidden></label></div>` : ""}
+      <input type="file" id="file" accept=".dwg,.dxf,.pdf,.ifc" hidden></label></div>` : ""}
     ${jobBanner(p.tache && p.tache.kind === "analyse" ? p.tache : null)}
   </section>
   ${a ? `<section class="card">
@@ -180,7 +180,9 @@ function paneplan(el, p) {
     ${a.planches.map((s) => `<tr><td>${s.numero}</td><td>${esc(s.titre)}</td><td>${s.plan ? "plan" : "autre"}</td><td>${s.taille.join(" × ")}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">Dessin d'une seule planche.</td></tr>`}
     </table></div>
     <h2>Niveaux</h2>
-    ${a.multi ? `<p class="small muted">Niveaux et hauteurs lus sur les coupes et façades ; corrigez si besoin.</p>
+    ${a.ifc ? `<p class="small muted">Maquette IFC : niveaux, poteaux, poutres, dalles et locaux lus directement.</p>
+    <div class="table-wrap"><table><tr><th>Niveau</th><th>Altitude</th><th>Hauteur (m)</th><th>Contenu</th></tr>
+    ${a.niveaux.map((n) => `<tr><td>${esc(n.nom)}</td><td>+${fmt(n.altitude, 2)}</td><td>${fmt(n.hauteur, 2)}</td><td class="small muted">${esc(n.raison)}</td></tr>`).join("")}</table></div>` : a.multi ? `<p class="small muted">Niveaux et hauteurs lus sur les coupes et façades ; corrigez si besoin.</p>
     <div class="table-wrap"><table><tr><th>Niveau</th><th>Altitude</th><th>Hauteur (m)</th><th>Planche</th><th>Choix</th></tr>
     ${a.niveaux.map((n) => `<tr><td>${esc(n.nom)}</td><td>+${fmt(n.altitude, 2)}</td>
       <td><input data-h="${esc(n.code)}" type="number" step="0.01" min="2" max="8" value="${n.hauteur}" ${canEdit() ? "" : "disabled"} style="max-width:110px"></td>
@@ -217,7 +219,9 @@ function paneplan(el, p) {
   }
   const save = async (thenCalc) => {
     const lecture = { calque_poteaux: calque.value.trim() || null, echelle: ech.value ? Number(ech.value) : null };
-    if (a && a.multi) {
+    if (a && a.ifc) {
+      // rien à régler : la maquette IFC porte ses niveaux
+    } else if (a && a.multi) {
       lecture.hauteurs = [...el.querySelectorAll("[data-h]")].map((i) => `${i.dataset.h}=${i.value}`).join(",");
       lecture.affectation = [...el.querySelectorAll("[data-s]")].map((s) => `${s.dataset.s}=${s.value}`).join(",");
     } else {
@@ -356,10 +360,52 @@ function panecalc(el, p) {
   const b = document.getElementById("run"); if (b) b.onclick = () => runCalc(p.id);
 }
 
+// --- Devis
+async function panedevis(el, p) {
+  el.innerHTML = `<div class="spinner"></div>`;
+  const d = await api(`/api/projets/${p.id}/devis`);
+  const cfg = p.configuration.devis || {}, dv = d.devis, money = (v) => fmt(v, 0);
+  const dis = canEdit() ? "" : "disabled";
+  el.innerHTML = `<section class="card"><h2 style="margin-top:0">Bordereau de prix</h2>
+    ${d.bordereau ? `<p>Bordereau : <b>${esc(d.bordereau.source)}</b> — ${d.bordereau.articles} articles.</p>` : `<p class="muted">Aucun bordereau : le devis donne les quantités, les prix sont à saisir.</p>`}
+    ${canEdit() ? `<label class="button" style="display:inline-flex;color:#fff">Importer un bordereau (xls, xlsx, csv)<input type="file" id="bf" accept=".xls,.xlsx,.xlsm,.csv" hidden></label>` : ""}
+    <h3>Réglages</h3><div class="row">
+      <div><label>Catégorie de terrain (fouilles)</label><select id="dcat" ${dis}>${["1ERE", "2EME", "3EME", "4EME"].map((c) => `<option ${c === (cfg.categorie || "2EME") ? "selected" : ""}>${c}</option>`).join("")}</select></div>
+      <div><label>Dosage béton de fondation (kg/m³)</label><select id="ddos" ${dis}>${[200, 250, 300, 350, 400].map((c) => `<option ${c === (cfg.dosage || 350) ? "selected" : ""}>${c}</option>`).join("")}</select></div>
+      <div><label>Plancher à corps creux</label><select id="dhou" ${dis}>${[["", "selon le poids du plancher"], ["12 + 4"], ["16 + 4"], ["20 + 5"], ["25 + 5"], ["30 + 5"]].map(([v, l]) => `<option value="${v}" ${v === (cfg.hourdis || "") ? "selected" : ""}>${l || v}</option>`).join("")}</select></div>
+      <div><label>TVA</label><input id="dtva" type="number" step="0.01" value="${cfg.tva ?? 0.18}" ${dis}></div>
+    </div>
+    ${canEdit() ? `<div class="actions"><button id="dup">Enregistrer et mettre à jour le devis</button></div>` : ""}
+  </section>
+  ${dv ? `<section class="card"><h2 style="margin-top:0">Devis quantitatif et estimatif</h2>
+    <div class="kpis"><div class="kpi"><span class="muted small">Total HT</span><b>${money(dv.total_ht)} ${esc(dv.currency)}</b></div>
+      <div class="kpi"><span class="muted small">TVA ${fmt(dv.tva * 100, 1)} %</span><b>${money(dv.tva_montant)}</b></div>
+      <div class="kpi"><span class="muted small">Total TTC</span><b>${money(dv.total_ttc)} ${esc(dv.currency)}</b></div></div>
+    <div class="table-wrap" style="margin-top:10px"><table><tr><th>Désignation</th><th>Unité</th><th>Quantité</th><th>P.U HT</th><th>Montant HT</th></tr>
+    ${(() => { let html = "", lot = null; for (const ln of dv.lines) { if (ln.lot !== lot) { lot = ln.lot; const st = dv.lines.filter((x) => x.lot === lot).reduce((a, x) => a + x.amount, 0); html += `<tr><th colspan="4">${esc(lot)}</th><th>${money(st)}</th></tr>`; }
+      html += `<tr><td>${esc(ln.designation)}<div class="source">${esc(ln.price_ref || "prix à saisir")}</div></td><td>${esc(ln.unit)}</td><td>${fmt(ln.quantity, 2)}</td><td ${ln.pu_ht === null ? 'style="color:var(--ko)"' : ""}>${ln.pu_ht === null ? "à saisir" : money(ln.pu_ht)}</td><td>${money(ln.amount)}</td></tr>`; } return html; })()}
+    </table></div>
+    ${dv.notes.map((n) => `<p class="small muted">${esc(n)}</p>`).join("")}
+    <div class="actions">${p.fichiers.includes("devis.xlsx") ? `<a class="button" href="/api/projets/${p.id}/fichiers/devis.xlsx" download>Télécharger le devis (Excel)</a>` : ""}</div>
+  </section>` : `<section class="card"><p class="muted">Lancez le calcul : le devis est établi à partir du métré des éléments dimensionnés.</p></section>`}`;
+  const bf = document.getElementById("bf");
+  if (bf) bf.onchange = async () => {
+    const fd = new FormData(); fd.append("fichier", bf.files[0]); toast("Lecture du bordereau…");
+    const r = await api(`/api/projets/${p.id}/bpu`, { method: "POST", body: fd }).catch((e) => { toast(e.message); return null; });
+    if (r) { toast(`${r.articles} articles importés.`); viewProject(p.id, "devis"); }
+  };
+  const up = document.getElementById("dup");
+  if (up) up.onclick = async () => {
+    await api(`/api/projets/${p.id}/configuration`, { method: "PUT", json: { devis: { categorie: dcat.value, dosage: Number(ddos.value), hourdis: dhou.value || null, tva: Number(dtva.value) } } });
+    runCalc(p.id);
+  };
+}
+
 // --- Fichiers
-const FILE_INFO = [[/^note_de_calcul\.pdf$/, "Note de calcul (PDF)"], [/^note_de_calcul\.html$/, "Note de calcul (HTML)"],
+const FILE_INFO = [[/^devis\.xlsx$/, "Devis quantitatif et estimatif (Excel)"], [/^devis\.json$/, "Devis (JSON)"],[/^note_de_calcul\.pdf$/, "Note de calcul (PDF)"], [/^note_de_calcul\.html$/, "Note de calcul (HTML)"],
   [/^coffrage_/, "Plan de coffrage (DXF)"], [/^plan_coffrage/, "Plan de coffrage (DXF)"], [/^plan_fondations/, "Plan de fondations (DXF)"],
   [/^plans_ferraillage/, "Plans de ferraillage (DXF)"], [/^controle/, "Plan de contrôle du modèle (DXF)"],
+  [/\.ifc$/, "Maquette IFC (Revit, ArchiCAD, Robot, CYPECAD, Graitec…)"],
   [/^projet\.json|^modele\.json/, "Modèle structurel (JSON)"], [/^resultats\.json/, "Résultats (JSON)"], [/^geotech/, "Données géotechniques (JSON)"]];
 function panefiles(el, p) {
   const files = (p.fichiers || []).filter((f) => f !== "modele_3d.json");

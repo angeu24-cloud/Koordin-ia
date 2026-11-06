@@ -90,6 +90,50 @@ L'application reprend tout le moteur, sans aucune ligne de commande pour l'utili
   l'image Docker fournie (`Dockerfile`, LibreDWG inclus pour les DWG). Pour un accès par
   internet, placer l'application derrière un proxy HTTPS (Caddy, Nginx).
 
+## Échanges IFC (Revit, ArchiCAD, Robot, CYPECAD, Graitec…)
+
+- **Export** : chaque calcul produit `resultats/modele.ifc` (IFC4, validé). Il contient :
+  - les niveaux avec leurs altitudes ;
+  - les poteaux, les poutres (dont les transferts), les planchers et les semelles, avec leur
+    géométrie réelle et le matériau béton armé ;
+  - les résultats de dimensionnement dans le jeu de propriétés `Koordin_Dimensionnement`
+    (section, armatures, cadres, Nu, vérification) ;
+  - les quantités (`Qto_…BaseQuantities`).
+- **Import** : une maquette IFC exportée de Revit, ArchiCAD, Tekla, Robot ou CYPECAD est
+  acceptée en entrée (`koordinia calculer maquette.ifc`, ou dépôt dans l'application web).
+  Le programme lit les niveaux, les poteaux, les poutres (sections), les dalles (contour),
+  les murs porteurs et les locaux (IfcSpace → usages et charges).
+
+## Devis quantitatif et estimatif
+
+```bash
+koordinia bpu BORDEREAU_DE_PRIX.xls -o Projets/Immeuble_X     # → bpu.json
+# koordinia.json : "devis": {"bpu": "bpu.json", "categorie": "2EME", "dosage": 350, "hourdis": null, "tva": 0.18}
+koordinia calculer --config Projets/Immeuble_X/koordinia.json  # → resultats/devis.xlsx
+```
+
+- **Bordereau** : formats xls, xlsx et csv. La ligne d'en-tête et les colonnes
+  (désignation, unité, P.U HT ou TTC) sont reconnues automatiquement. Chaque prix est
+  repéré par son chemin complet « Lot > chapitre > désignation » (les libellés répétés,
+  comme « 2ème catégorie », sont ainsi distingués). Testé avec le bordereau officiel du
+  Ministère de la Construction de Côte d'Ivoire (2012, 823 articles).
+- **Métré** tiré du calcul :
+  - fouilles en puits, remblais et évacuation (ancrage pris dans le rapport géotechnique) ;
+  - béton de propreté, semelles et amorces ;
+  - poteaux, poutres et poutres de transfert ;
+  - planchers à corps creux (net des poutres et des balcons), balcons, escaliers ;
+  - aciers HA (barres réellement calculées, ratios pour les dalles) ;
+  - coffrages par type ; radier ou pieux selon le type de fondation.
+- **Rattachement aux prix** : chaque ouvrage est relié à sa ligne du bordereau par des
+  règles modifiables (`koordinia/data/ouvrages.json`). Un ouvrage sans prix est signalé
+  « à saisir ».
+- **Excel** :
+  - feuille **DQE** avec de vraies formules (quantité × P.U), sous-totaux par lot, TVA,
+    total TTC ;
+  - feuille **Métré** avec le détail par élément ;
+  - feuille **Prix** avec la ligne exacte du bordereau utilisée.
+- **Application web** : onglet *Devis* (import du bordereau, réglages, tableau, téléchargement).
+
 ## Démarrer un nouveau projet
 
 Chaque projet a son dossier et son fichier `koordinia.json`. Ce fichier contient le plan,
