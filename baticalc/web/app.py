@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import hmac
 import json
 import os
 import re
@@ -35,11 +36,19 @@ def _safe_filename(name: str) -> str:
     return base
 
 
-def create_app(data_dir: str | Path | None = None, sync_jobs: bool | None = None) -> FastAPI:
+def create_app(data_dir: str | Path | None = None, sync_jobs: bool | None = None,
+               inscription: str | None = None, code_inscription: str | None = None) -> FastAPI:
+    """Inscriptions :
+    - `inscription` « ouverte » (défaut) : tout visiteur peut créer un compte ;
+    - « fermee » : seul le premier compte (administrateur) peut être créé ;
+    - `code_inscription` : code d'invitation exigé pour créer un compte (sauf le premier).
+    Variables d'environnement équivalentes : BATICALC_INSCRIPTION, BATICALC_CODE_INSCRIPTION."""
     from .. import data_dir as _data_dir, env
 
     store = Storage(data_dir or _data_dir(env("DATA", "donnees_baticalc")))
     sync = sync_jobs if sync_jobs is not None else env("SYNC_JOBS") == "1"
+    signup_mode = (inscription or env("INSCRIPTION", "ouverte")).lower()
+    signup_code = code_inscription if code_inscription is not None else env("CODE_INSCRIPTION")
     pool = ThreadPoolExecutor(max_workers=1)
     run_lock = threading.Lock()
     app = FastAPI(title="BatiCalc", version="0.2")
@@ -170,8 +179,22 @@ def create_app(data_dir: str | Path | None = None, sync_jobs: bool | None = None
             raise RuntimeError("le calcul a échoué (voir le journal)")
 
     # ------------------------------------------------------------------ comptes
+    def signup_rules() -> dict:
+        first = store.q("SELECT COUNT(*) AS n FROM users", one=True)["n"] == 0
+        closed = signup_mode.startswith("ferm") and not signup_code
+        return {"ouverte": first or not closed, "code": bool(signup_code) and not first, "premier": first}
+
+    @app.get("/api/compte/inscription")
+    def register_rules():
+        return signup_rules()
+
     @app.post("/api/compte/inscription")
-    def register(body: dict, response: Response):
+    def register(body: dict, request: Request, response: Response):
+        rules = signup_rules()
+        if not rules["ouverte"]:
+            raise HTTPException(403, "Les inscriptions sont fermées : demandez un compte à l'administrateur.")
+        if rules["code"] and not hmac.compare_digest(str(body.get("code", "")), str(signup_code)):
+            raise HTTPException(403, "Code d'invitation incorrect.")
         email, name, pw = body.get("email", ""), body.get("nom", ""), body.get("mot_de_passe", "")
         if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email or ""):
             raise HTTPException(400, "Adresse e-mail invalide.")
@@ -183,15 +206,17 @@ def create_app(data_dir: str | Path | None = None, sync_jobs: bool | None = None
             uid = store.create_user(email, name, pw)
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from exc
-        response.set_cookie(COOKIE, store.new_session(uid), httponly=True, samesite="lax", max_age=14 * 86400)
+        response.set_cookie(COOKIE, store.new_session(uid), httponly=True, samesite="lax", max_age=14 * 86400,
+                            secure=request.url.scheme == "https")
         return {"id": uid, "email": email.lower(), "nom": name}
 
     @app.post("/api/compte/connexion")
-    def login(body: dict, response: Response):
+    def login(body: dict, request: Request, response: Response):
         u = store.authenticate(body.get("email", ""), body.get("mot_de_passe", ""))
         if not u:
             raise HTTPException(401, "Adresse ou mot de passe incorrect.")
-        response.set_cookie(COOKIE, store.new_session(u["id"]), httponly=True, samesite="lax", max_age=14 * 86400)
+        response.set_cookie(COOKIE, store.new_session(u["id"]), httponly=True, samesite="lax", max_age=14 * 86400,
+                            secure=request.url.scheme == "https")
         return {"id": u["id"], "email": u["email"], "nom": u["name"]}
 
     @app.post("/api/compte/deconnexion")

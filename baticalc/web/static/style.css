@@ -33,6 +33,7 @@ h3 { font-size: 1rem; margin: 1rem 0 .4rem; }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; color: var(--text); text-decoration: none; }
 .brand img { width: 28px; height: 28px; }
 #usernav { display: flex; align-items: center; gap: 10px; }
+[hidden] { display: none !important; }
 #username { color: var(--muted); font-size: .9rem; }
 main { max-width: 1200px; margin: 0 auto; padding: 16px; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px;

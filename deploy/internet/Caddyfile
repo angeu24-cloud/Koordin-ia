@@ -1,0 +1,7 @@
+{$DOMAINE} {
+	encode gzip
+	request_body {
+		max_size 200MB
+	}
+	reverse_proxy baticalc:8000
+}

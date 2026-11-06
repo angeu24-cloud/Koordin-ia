@@ -630,9 +630,11 @@ def cmd_serveur(args) -> int:
     from . import data_dir
 
     donnees = data_dir(args.donnees)
-    app = create_app(donnees)
+    app = create_app(donnees, inscription=args.inscription, code_inscription=args.code_inscription)
     print(f"BatiCalc : http://{args.hote}:{args.port}  (données : {Path(donnees).resolve()})")
-    uvicorn.run(app, host=args.hote, port=args.port, log_level="warning")
+    # en-têtes X-Forwarded-* acceptés : derrière un proxy HTTPS (Caddy, Nginx), cookies « secure »
+    uvicorn.run(app, host=args.hote, port=args.port, log_level="warning", proxy_headers=True,
+                forwarded_allow_ips="*")
     return 0
 
 
@@ -708,6 +710,9 @@ def main(argv: list[str] | None = None) -> int:
     sv.add_argument("--port", type=int, default=8000)
     sv.add_argument("--hote", default="0.0.0.0", help="Adresse d'écoute (0.0.0.0 = accessible sur le réseau)")
     sv.add_argument("--donnees", default="donnees_baticalc", help="Dossier des comptes, projets et fichiers")
+    sv.add_argument("--inscription", choices=["ouverte", "fermee"],
+                    help="ouverte : tout visiteur peut créer un compte ; fermee : seul le premier compte")
+    sv.add_argument("--code-inscription", help="Code d'invitation exigé pour créer un compte")
     sv.set_defaults(func=cmd_serveur)
 
     rc = sub.add_parser("robot-comparer", help="Comparer les réactions calculées par Robot à la descente de charges")

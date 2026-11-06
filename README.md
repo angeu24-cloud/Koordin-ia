@@ -93,9 +93,17 @@ L'application reprend tout le moteur, sans aucune ligne de commande pour l'utili
   résultats), dans le dossier `--donnees`, à sauvegarder régulièrement.
 - **Installable** sur tablette ou ordinateur (« Ajouter à l'écran d'accueil »).
   three.js est intégré à l'application, qui fonctionne donc sur un réseau local sans internet.
-- **Mise en service pour une équipe** : sur un serveur du bureau ou un serveur loué, avec
-  l'image Docker fournie (`Dockerfile`, LibreDWG inclus pour les DWG). Pour un accès par
-  internet, placer l'application derrière un proxy HTTPS (Caddy, Nginx).
+- **Inscriptions** : le premier compte créé est l'administrateur. Sur un serveur accessible
+  par internet, protéger les inscriptions par un code d'invitation
+  (`--code-inscription CODE` ou variable `BATICALC_CODE_INSCRIPTION`), ou les fermer
+  (`--inscription fermee`).
+- **Mise en service pour une équipe** : guide pas à pas dans
+  [docs/INSTALLATION.md](docs/INSTALLATION.md) :
+  - serveur du bureau : `deploy/bureau` ;
+  - serveur sur internet avec HTTPS automatique : `deploy/internet` ;
+  - sauvegarde : `deploy/sauvegarde.sh`.
+
+  LibreDWG est inclus dans l'image Docker pour lire les DWG.
 
 ## Échanges IFC (Revit, ArchiCAD, Robot, CYPECAD, Graitec…)
 

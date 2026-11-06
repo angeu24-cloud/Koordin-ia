@@ -1,0 +1,17 @@
+# BatiCalc — serveur du bureau (réseau local, sans internet nécessaire)
+# Lancement : docker compose up -d --build     puis   http://<adresse-du-serveur>:8000
+name: baticalc
+services:
+  baticalc:
+    build: ../..
+    image: baticalc
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      BATICALC_INSCRIPTION: ${BATICALC_INSCRIPTION:-ouverte}
+      BATICALC_CODE_INSCRIPTION: ${BATICALC_CODE_INSCRIPTION:-}
+    volumes:
+      - donnees:/donnees
+volumes:
+  donnees:

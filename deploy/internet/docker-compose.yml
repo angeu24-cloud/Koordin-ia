@@ -1,0 +1,33 @@
+# BatiCalc — serveur sur internet, HTTPS automatique (certificat Let's Encrypt via Caddy)
+# Préparer le fichier .env (voir .env.exemple), puis : docker compose up -d --build
+name: baticalc
+services:
+  baticalc:
+    build: ../..
+    image: baticalc
+    restart: unless-stopped
+    expose:
+      - "8000"
+    environment:
+      BATICALC_INSCRIPTION: ${BATICALC_INSCRIPTION:-fermee}
+      BATICALC_CODE_INSCRIPTION: ${BATICALC_CODE_INSCRIPTION:?indiquez BATICALC_CODE_INSCRIPTION dans .env}
+    volumes:
+      - donnees:/donnees
+  caddy:
+    image: caddy:2.8
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAINE: ${DOMAINE:?indiquez DOMAINE dans .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - baticalc
+volumes:
+  donnees:
+  caddy_data:
+  caddy_config:

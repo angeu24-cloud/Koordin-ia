@@ -132,3 +132,22 @@ def test_old_database_is_taken_over(tmp_path):
     st2 = Storage(tmp_path)
     assert st2.authenticate("ancien@bet.ci", "motdepasse1")
     assert not (tmp_path / "koordinia.sqlite").exists()
+
+
+def test_signup_rules(tmp_path):
+    """Serveur sur internet : inscriptions fermées ou protégées par un code d'invitation."""
+    def signup(app, email, **extra):
+        return TestClient(app).post("/api/compte/inscription", json={"email": email, "nom": "X",
+                                                                     "mot_de_passe": "motdepasse1", **extra})
+
+    closed = create_app(tmp_path / "a", sync_jobs=True, inscription="fermee")
+    assert TestClient(closed).get("/api/compte/inscription").json() == {"ouverte": True, "code": False, "premier": True}
+    assert signup(closed, "admin@bet.ci").status_code == 200          # premier compte = administrateur
+    assert signup(closed, "intrus@x.com").status_code == 403
+    assert TestClient(closed).get("/api/compte/inscription").json()["ouverte"] is False
+
+    coded = create_app(tmp_path / "b", sync_jobs=True, code_inscription="BET-2026")
+    assert signup(coded, "admin@bet.ci").status_code == 200           # premier compte : sans code
+    assert signup(coded, "collegue@bet.ci").status_code == 403
+    assert signup(coded, "collegue@bet.ci", code="faux").status_code == 403
+    assert signup(coded, "collegue@bet.ci", code="BET-2026").status_code == 200

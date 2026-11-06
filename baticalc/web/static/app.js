@@ -51,19 +51,26 @@ async function route() {
 }
 
 // ------------------------------------------------------------------ connexion
-function viewAuth(mode) {
-  const signup = mode === "inscription";
+async function viewAuth(mode) {
+  let signup = mode === "inscription";
+  let rules = { ouverte: true, code: false, premier: false };
+  try { rules = await api("/api/compte/inscription"); } catch (e) { /* serveur ancien */ }
+  if (rules.premier) signup = true;            // aucun compte : création de l'administrateur
+  if (!rules.ouverte) signup = false;
   $app.innerHTML = `
   <section class="card auth">
     <h1>${signup ? "Créer un compte" : "Connexion"}</h1>
     <p class="muted small">Modélisation et dimensionnement de structures à partir des plans d'architecte.</p>
     <form id="f">
+      ${signup && rules.premier ? `<p class="small">Premier compte : il sera l'administrateur de cette installation.</p>` : ""}
       ${signup ? `<label for="nom">Nom</label><input id="nom" autocomplete="name" required>` : ""}
       <label for="email">Adresse e-mail</label><input id="email" type="email" autocomplete="email" required>
       <label for="pw">Mot de passe${signup ? " (8 caractères minimum)" : ""}</label>
       <input id="pw" type="password" autocomplete="${signup ? "new-password" : "current-password"}" required>
+      ${signup && rules.code ? `<label for="code">Code d'invitation (demandez-le à votre administrateur)</label><input id="code" autocomplete="off" required>` : ""}
       <div class="actions"><button type="submit">${signup ? "Créer mon compte" : "Se connecter"}</button>
-      <a class="button ghost" href="#/${signup ? "connexion" : "inscription"}">${signup ? "J'ai déjà un compte" : "Créer un compte"}</a></div>
+      ${rules.premier ? "" : !rules.ouverte ? `<span class="muted small">Inscriptions fermées : demandez un compte à l'administrateur.</span>`
+        : `<a class="button ghost" href="#/${signup ? "connexion" : "inscription"}">${signup ? "J'ai déjà un compte" : "Créer un compte"}</a>`}</div>
       <p id="err" class="small" style="color:var(--ko)"></p>
     </form>
   </section>`;
@@ -71,6 +78,7 @@ function viewAuth(mode) {
     e.preventDefault();
     const body = { email: email.value, mot_de_passe: pw.value };
     if (signup) body.nom = document.getElementById("nom").value;
+    if (signup && rules.code) body.code = document.getElementById("code").value;
     try {
       state.user = await api(`/api/compte/${signup ? "inscription" : "connexion"}`, { json: body });
       go("#/");
