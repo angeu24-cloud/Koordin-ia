@@ -88,6 +88,7 @@ class Server:
         self.data = data
         self.thread: threading.Thread | None = None
         self.server = None
+        self.app = None
         self.host = "127.0.0.1"
         self.port = 0
 
@@ -99,7 +100,8 @@ class Server:
         self.stop()
         self.host = "0.0.0.0" if shared else "127.0.0.1"
         self.port = free_port(SHARED_PORT if shared else None, self.host)
-        config = uvicorn.Config(create_app(self.data), host=self.host, port=self.port, log_level="warning",
+        self.app = create_app(self.data)
+        config = uvicorn.Config(self.app, host=self.host, port=self.port, log_level="warning",
                                 proxy_headers=True, forwarded_allow_ips="*")
         self.server = uvicorn.Server(config)
         self.thread = threading.Thread(target=self.server.run, daemon=True)
@@ -117,6 +119,12 @@ class Server:
             if self.thread:
                 self.thread.join(timeout=5)
         self.server = None
+        if self.app is not None:   # base SQLite fermée (Windows verrouille les fichiers ouverts)
+            try:
+                self.app.state.store.db.close()
+            except Exception:
+                pass
+            self.app = None
 
     @property
     def local_url(self) -> str:
@@ -210,7 +218,7 @@ def self_test(report: Path) -> int:
         from .cli import main as cli
         from .sample import write_sample_dxf
 
-        with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             plan = write_sample_dxf(Path(tmp) / "exemple.dxf")
             rc = cli(["calculer", str(plan), "-o", str(Path(tmp) / "res"), "--niveaux", "3"])
             produced = sorted(p.name for p in (Path(tmp) / "res").iterdir())
