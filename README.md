@@ -132,6 +132,19 @@ koordinia calculer --config Projets/Immeuble_X/koordinia.json  # → resultats/d
     total TTC ;
   - feuille **Métré** avec le détail par élément ;
   - feuille **Prix** avec la ligne exacte du bordereau utilisée.
+- **Second œuvre** (à partir des plans d'architecte) :
+  - murs lus sur les calques de murs, tronçons alignés fusionnés, classés par épaisseur
+    (agglos 20, 15 ou 10 cm) ; façades reconnues, balcons compris ;
+  - ouvertures (portes, fenêtres, baies) lues sur les calques de menuiserie, avec leur
+    largeur et leur position (intérieure ou en façade) ;
+  - quantités par lot :
+    - maçonnerie nette des ouvertures ;
+    - enduits intérieurs, extérieurs et plafonds ;
+    - sols selon l'usage des locaux (grès, antidérapant pour pièces d'eau et balcons,
+      chape pour parkings et locaux techniques, dallage au niveau bas) ;
+    - plinthes, faïence des pièces d'eau ;
+    - étanchéité de terrasse (forme de pente, revêtement, relevés, protection) ;
+    - menuiseries aluminium et bois, appuis de fenêtre, peintures.
 - **Application web** : onglet *Devis* (import du bordereau, réglages, tableau, téléchargement).
 
 ## Démarrer un nouveau projet

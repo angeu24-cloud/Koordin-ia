@@ -209,6 +209,7 @@ def build_project(
         plan.footprint = base.slab
         plan.slab = upper.slab
         plan.zones = copy.deepcopy(upper.zones)
+        plan.rooms = copy.deepcopy(base.zones)  # locaux du niveau lui-même (finitions, menuiseries)
         # Terrasses / espaces verts de l'étage supérieur situés au-dessus de cet étage : dalle à créer
         if k + 1 < len(storeys) and upper.slab and base.slab:
             added = _add_exterior_zones(plan, base, upper)

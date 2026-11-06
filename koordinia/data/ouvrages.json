@@ -1,27 +1,456 @@
 {
   "_aide": "Rattachement des ouvrages du métré aux lignes du bordereau de prix. motifs : expressions régulières cherchées dans le chemin « Lot > chapitre > désignation » du bordereau, en MAJUSCULES sans accents ; {categorie}, {dosage} et {hourdis} sont remplacés par les réglages du devis. La première ligne du bordereau qui contient tous les motifs donne le prix ; sinon le prix reste à saisir.",
   "ouvrages": [
-    {"code": "TER-FOU", "lot": "TERRASSEMENTS", "designation": "Fouilles en puits pour semelles isolées", "unite": "m3", "motifs": ["FOUILLES EN PUITS", "{categorie} CATEGORIE"]},
-    {"code": "TER-FOR", "lot": "TERRASSEMENTS", "designation": "Fouilles en excavation (radier)", "unite": "m3", "motifs": ["FOUILLES EN EXCAVATION", "{categorie} CATEGORIE"]},
-    {"code": "TER-REM", "lot": "TERRASSEMENTS", "designation": "Remblais des fouilles", "unite": "m3", "motifs": ["REMBLAIS DES FOUILLES"]},
-    {"code": "TER-EVA", "lot": "TERRASSEMENTS", "designation": "Évacuation des déblais excédentaires", "unite": "m3", "motifs": ["EVACUATION DES DEBLAIS"]},
-    {"code": "GO-PRO", "lot": "GROS ŒUVRE", "designation": "Béton de propreté dosé à 150 kg/m³", "unite": "m3", "motifs": ["BETON DE PROPRETE", "150"]},
-    {"code": "GO-SEM", "lot": "GROS ŒUVRE", "designation": "Béton armé pour semelles (dosé à {dosage} kg/m³)", "unite": "m3", "motifs": ["BETON DE SEMELLE", "{dosage}"]},
-    {"code": "GO-RAD", "lot": "GROS ŒUVRE", "designation": "Béton armé pour radier (dosé à {dosage} kg/m³)", "unite": "m3", "motifs": ["BETON DE SEMELLE", "{dosage}"]},
-    {"code": "GO-AMO", "lot": "GROS ŒUVRE", "designation": "Béton armé pour amorces de poteaux", "unite": "m3", "motifs": ["POTEAUX ET RAIDISSEURS"]},
-    {"code": "GO-POT", "lot": "GROS ŒUVRE", "designation": "Béton armé pour poteaux", "unite": "m3", "motifs": ["POTEAUX ET RAIDISSEURS"]},
-    {"code": "GO-POU", "lot": "GROS ŒUVRE", "designation": "Béton armé pour poutres", "unite": "m3", "motifs": ["POUTRES, CHAINAGES"]},
-    {"code": "GO-TRF", "lot": "GROS ŒUVRE", "designation": "Béton armé pour poutres de transfert", "unite": "m3", "motifs": ["POUTRES, CHAINAGES"]},
-    {"code": "GO-DAL", "lot": "GROS ŒUVRE", "designation": "Béton armé pour dalles pleines", "unite": "m3", "motifs": ["BETON EN ELEVATION", "DALLE PLEINE"]},
-    {"code": "GO-BAL", "lot": "GROS ŒUVRE", "designation": "Béton armé pour balcons (dalle pleine en console)", "unite": "m3", "motifs": ["BETON EN ELEVATION", "DALLE PLEINE"]},
-    {"code": "GO-ESC", "lot": "GROS ŒUVRE", "designation": "Béton armé pour escaliers (paillasses et paliers)", "unite": "m3", "motifs": ["BETON EN ELEVATION", "ESCALIERS"]},
-    {"code": "GO-HOU", "lot": "GROS ŒUVRE", "designation": "Plancher à corps creux {hourdis} (poutrelles, hourdis, table de compression)", "unite": "m2", "motifs": ["HOURDIS", "{hourdis}"]},
-    {"code": "GO-HA", "lot": "GROS ŒUVRE", "designation": "Armatures en acier à haute adhérence", "unite": "kg", "motifs": ["HAUTE ADHERENCE"]},
-    {"code": "GO-CSE", "lot": "GROS ŒUVRE", "designation": "Coffrage de semelles", "unite": "m2", "motifs": ["COFFRAGE DE SEMELLES"]},
-    {"code": "GO-CAM", "lot": "GROS ŒUVRE", "designation": "Coffrage d'amorces de poteaux isolés", "unite": "m2", "motifs": ["AMORCE DE POTEAUX ISOLES"]},
-    {"code": "GO-CPO", "lot": "GROS ŒUVRE", "designation": "Coffrage de poteaux isolés", "unite": "m2", "motifs": ["COFFRAGE DE POTEAUX ISOLE"]},
-    {"code": "GO-CPU", "lot": "GROS ŒUVRE", "designation": "Coffrage de poutres", "unite": "m2", "motifs": ["COFFRAGES? DE POUTRES"]},
-    {"code": "GO-CDA", "lot": "GROS ŒUVRE", "designation": "Coffrage de dalles pleines, balcons et escaliers", "unite": "m2", "motifs": ["COFFRAGE DE DALLES PLEINES"]},
-    {"code": "GO-PIE", "lot": "FONDATIONS PROFONDES", "designation": "Pieux forés (selon rapport géotechnique)", "unite": "u", "motifs": ["PIEUX?"]}
+    {
+      "code": "TER-FOU",
+      "lot": "TERRASSEMENTS",
+      "designation": "Fouilles en puits pour semelles isolées",
+      "unite": "m3",
+      "motifs": [
+        "FOUILLES EN PUITS",
+        "{categorie} CATEGORIE"
+      ]
+    },
+    {
+      "code": "TER-FOR",
+      "lot": "TERRASSEMENTS",
+      "designation": "Fouilles en excavation (radier)",
+      "unite": "m3",
+      "motifs": [
+        "FOUILLES EN EXCAVATION",
+        "{categorie} CATEGORIE"
+      ]
+    },
+    {
+      "code": "TER-REM",
+      "lot": "TERRASSEMENTS",
+      "designation": "Remblais des fouilles",
+      "unite": "m3",
+      "motifs": [
+        "REMBLAIS DES FOUILLES"
+      ]
+    },
+    {
+      "code": "TER-EVA",
+      "lot": "TERRASSEMENTS",
+      "designation": "Évacuation des déblais excédentaires",
+      "unite": "m3",
+      "motifs": [
+        "EVACUATION DES DEBLAIS"
+      ]
+    },
+    {
+      "code": "GO-PRO",
+      "lot": "GROS ŒUVRE",
+      "designation": "Béton de propreté dosé à 150 kg/m³",
+      "unite": "m3",
+      "motifs": [
+        "BETON DE PROPRETE",
+        "150"
+      ]
+    },
+    {
+      "code": "GO-SEM",
+      "lot": "GROS ŒUVRE",
+      "designation": "Béton armé pour semelles (dosé à {dosage} kg/m³)",
+      "unite": "m3",
+      "motifs": [
+        "BETON DE SEMELLE",
+        "{dosage}"
+      ]
+    },
+    {
+      "code": "GO-RAD",
+      "lot": "GROS ŒUVRE",
+      "designation": "Béton armé pour radier (dosé à {dosage} kg/m³)",
+      "unite": "m3",
+      "motifs": [
+        "BETON DE SEMELLE",
+        "{dosage}"
+      ]
+    },
+    {
+      "code": "GO-AMO",
+      "lot": "GROS ŒUVRE",
+      "designation": "Béton armé pour amorces de poteaux",
+      "unite": "m3",
+      "motifs": [
+        "POTEAUX ET RAIDISSEURS"
+      ]
+    },
+    {
+      "code": "GO-POT",
+      "lot": "GROS ŒUVRE",
+      "designation": "Béton armé pour poteaux",
+      "unite": "m3",
+      "motifs": [
+        "POTEAUX ET RAIDISSEURS"
+      ]
+    },
+    {
+      "code": "GO-POU",
+      "lot": "GROS ŒUVRE",
+      "designation": "Béton armé pour poutres",
+      "unite": "m3",
+      "motifs": [
+        "POUTRES, CHAINAGES"
+      ]
+    },
+    {
+      "code": "GO-TRF",
+      "lot": "GROS ŒUVRE",
+      "designation": "Béton armé pour poutres de transfert",
+      "unite": "m3",
+      "motifs": [
+        "POUTRES, CHAINAGES"
+      ]
+    },
+    {
+      "code": "GO-DAL",
+      "lot": "GROS ŒUVRE",
+      "designation": "Béton armé pour dalles pleines",
+      "unite": "m3",
+      "motifs": [
+        "BETON EN ELEVATION",
+        "DALLE PLEINE"
+      ]
+    },
+    {
+      "code": "GO-BAL",
+      "lot": "GROS ŒUVRE",
+      "designation": "Béton armé pour balcons (dalle pleine en console)",
+      "unite": "m3",
+      "motifs": [
+        "BETON EN ELEVATION",
+        "DALLE PLEINE"
+      ]
+    },
+    {
+      "code": "GO-ESC",
+      "lot": "GROS ŒUVRE",
+      "designation": "Béton armé pour escaliers (paillasses et paliers)",
+      "unite": "m3",
+      "motifs": [
+        "BETON EN ELEVATION",
+        "ESCALIERS"
+      ]
+    },
+    {
+      "code": "GO-HOU",
+      "lot": "GROS ŒUVRE",
+      "designation": "Plancher à corps creux {hourdis} (poutrelles, hourdis, table de compression)",
+      "unite": "m2",
+      "motifs": [
+        "HOURDIS",
+        "{hourdis}"
+      ]
+    },
+    {
+      "code": "GO-HA",
+      "lot": "GROS ŒUVRE",
+      "designation": "Armatures en acier à haute adhérence",
+      "unite": "kg",
+      "motifs": [
+        "HAUTE ADHERENCE"
+      ]
+    },
+    {
+      "code": "GO-CSE",
+      "lot": "GROS ŒUVRE",
+      "designation": "Coffrage de semelles",
+      "unite": "m2",
+      "motifs": [
+        "COFFRAGE DE SEMELLES"
+      ]
+    },
+    {
+      "code": "GO-CAM",
+      "lot": "GROS ŒUVRE",
+      "designation": "Coffrage d'amorces de poteaux isolés",
+      "unite": "m2",
+      "motifs": [
+        "AMORCE DE POTEAUX ISOLES"
+      ]
+    },
+    {
+      "code": "GO-CPO",
+      "lot": "GROS ŒUVRE",
+      "designation": "Coffrage de poteaux isolés",
+      "unite": "m2",
+      "motifs": [
+        "COFFRAGE DE POTEAUX ISOLE"
+      ]
+    },
+    {
+      "code": "GO-CPU",
+      "lot": "GROS ŒUVRE",
+      "designation": "Coffrage de poutres",
+      "unite": "m2",
+      "motifs": [
+        "COFFRAGES? DE POUTRES"
+      ]
+    },
+    {
+      "code": "GO-CDA",
+      "lot": "GROS ŒUVRE",
+      "designation": "Coffrage de dalles pleines, balcons et escaliers",
+      "unite": "m2",
+      "motifs": [
+        "COFFRAGE DE DALLES PLEINES"
+      ]
+    },
+    {
+      "code": "GO-PIE",
+      "lot": "FONDATIONS PROFONDES",
+      "designation": "Pieux forés (selon rapport géotechnique)",
+      "unite": "u",
+      "motifs": [
+        "PIEUX?"
+      ]
+    },
+    {
+      "code": "MA-A20",
+      "lot": "MAÇONNERIE",
+      "designation": "Maçonnerie d'agglos creux de 20 cm (murs de façade et porteurs)",
+      "unite": "m2",
+      "motifs": [
+        "AGGLOS 20 CM CREUX"
+      ]
+    },
+    {
+      "code": "MA-A15",
+      "lot": "MAÇONNERIE",
+      "designation": "Maçonnerie d'agglos creux de 15 cm (cloisons)",
+      "unite": "m2",
+      "motifs": [
+        "AGGLOS 15 CM CREUX"
+      ]
+    },
+    {
+      "code": "MA-A10",
+      "lot": "MAÇONNERIE",
+      "designation": "Maçonnerie d'agglos creux de 10 cm (cloisons légères)",
+      "unite": "m2",
+      "motifs": [
+        "AGGLOS 10 CM CREUX"
+      ]
+    },
+    {
+      "code": "EN-INT",
+      "lot": "ENDUITS",
+      "designation": "Enduit intérieur dosé à 300 kg/m³",
+      "unite": "m2",
+      "motifs": [
+        "ENDUITS",
+        "ENDUIT DOSE A 300"
+      ]
+    },
+    {
+      "code": "EN-EXT",
+      "lot": "ENDUITS",
+      "designation": "Enduit extérieur dosé à 350 kg/m³",
+      "unite": "m2",
+      "motifs": [
+        "ENDUITS",
+        "ENDUIT DOSE A 350"
+      ]
+    },
+    {
+      "code": "EN-PLA",
+      "lot": "ENDUITS",
+      "designation": "Enduit en plafond (plus-value sur enduit)",
+      "unite": "m2",
+      "motifs": [
+        "PLUS-VALUE EN PLAFOND DROIT"
+      ]
+    },
+    {
+      "code": "SO-DAL",
+      "lot": "SOLS",
+      "designation": "Dallage sur terre-plein de 12 cm",
+      "unite": "m2",
+      "motifs": [
+        "DALLAGE DE FORME D'EPAISSEUR 12"
+      ]
+    },
+    {
+      "code": "SO-POL",
+      "lot": "SOLS",
+      "designation": "Film polyane sous dallage",
+      "unite": "m2",
+      "motifs": [
+        "FILM POLYANE"
+      ]
+    },
+    {
+      "code": "SO-CHA",
+      "lot": "SOLS",
+      "designation": "Chape en ciment (parkings, locaux techniques, stockages)",
+      "unite": "m2",
+      "motifs": [
+        "CHAPE EN CIMENT"
+      ]
+    },
+    {
+      "code": "SO-CAR",
+      "lot": "REVÊTEMENTS",
+      "designation": "Carreaux de grès cérame type local",
+      "unite": "m2",
+      "motifs": [
+        "GRES CERAME TYPE LOCAL"
+      ]
+    },
+    {
+      "code": "SO-ANT",
+      "lot": "REVÊTEMENTS",
+      "designation": "Carreaux de grès cérame anti-dérapant (pièces d'eau, balcons, terrasses)",
+      "unite": "m2",
+      "motifs": [
+        "GRES CERAME AVEC ANTI"
+      ]
+    },
+    {
+      "code": "SO-PLI",
+      "lot": "REVÊTEMENTS",
+      "designation": "Plinthes en grès cérame de 0,10",
+      "unite": "ml",
+      "motifs": [
+        "REVETEMENTS DES SOLS > GRES CERAME",
+        "PLINTHE DE 0,10"
+      ]
+    },
+    {
+      "code": "SO-FAI",
+      "lot": "REVÊTEMENTS",
+      "designation": "Faïence murale type local uni (pièces d'eau, h = 2,10 m)",
+      "unite": "m2",
+      "motifs": [
+        "FAIENCE TYPE LOCAL UNI"
+      ]
+    },
+    {
+      "code": "ET-FPE",
+      "lot": "ÉTANCHÉITÉ",
+      "designation": "Forme de pente en béton maigre",
+      "unite": "m2",
+      "motifs": [
+        "FORME DE PENTE EN BETON MAIGRE"
+      ]
+    },
+    {
+      "code": "ET-ETA",
+      "lot": "ÉTANCHÉITÉ",
+      "designation": "Étanchéité de terrasse accessible (bicouche bitume modifié)",
+      "unite": "m2",
+      "motifs": [
+        "TERRASSES ACCESSIBLES",
+        "ETANCHEITE COMPRENANT"
+      ]
+    },
+    {
+      "code": "ET-REL",
+      "lot": "ÉTANCHÉITÉ",
+      "designation": "Relevés d'étanchéité",
+      "unite": "ml",
+      "motifs": [
+        "RELEVES D'ETANCHEITE"
+      ]
+    },
+    {
+      "code": "ET-PRO",
+      "lot": "ÉTANCHÉITÉ",
+      "designation": "Protection d'étanchéité par dallettes",
+      "unite": "m2",
+      "motifs": [
+        "PROTECTION PAR DALLETTES"
+      ]
+    },
+    {
+      "code": "ME-FEN",
+      "lot": "MENUISERIE ALUMINIUM",
+      "designation": "Châssis aluminium de fenêtre ouvrant à la française (base 100×110)",
+      "unite": "u",
+      "motifs": [
+        "ENSEMBLE FENETRES",
+        "CHASSIS ALU OUVRANT A LA FRANCAISE"
+      ]
+    },
+    {
+      "code": "ME-FPV",
+      "lot": "MENUISERIE ALUMINIUM",
+      "designation": "Plus-value pour longueur supplémentaire de châssis de fenêtre",
+      "unite": "ml",
+      "motifs": [
+        "ENSEMBLE FENETRES",
+        "PLUS-VALUE POUR LONGUEUR"
+      ]
+    },
+    {
+      "code": "ME-BAI",
+      "lot": "MENUISERIE ALUMINIUM",
+      "designation": "Baie aluminium coulissante (base 100×210)",
+      "unite": "u",
+      "motifs": [
+        "ENSEMBLE PORTES",
+        "CHASSIS ALU COULISSANT"
+      ]
+    },
+    {
+      "code": "ME-BPV",
+      "lot": "MENUISERIE ALUMINIUM",
+      "designation": "Plus-value pour longueur supplémentaire de baie",
+      "unite": "ml",
+      "motifs": [
+        "ENSEMBLE PORTES",
+        "PLUS-VALUE POUR LONGUEUR"
+      ]
+    },
+    {
+      "code": "ME-PEX",
+      "lot": "MENUISERIE ALUMINIUM",
+      "designation": "Porte aluminium ouvrant à la française (100×210)",
+      "unite": "u",
+      "motifs": [
+        "ENSEMBLE PORTES",
+        "CHASSIS ALU OUVRANT"
+      ]
+    },
+    {
+      "code": "ME-APP",
+      "lot": "MENUISERIE ALUMINIUM",
+      "designation": "Appuis de fenêtre non saillants",
+      "unite": "ml",
+      "motifs": [
+        "APPUIS DE FENETRE NON"
+      ]
+    },
+    {
+      "code": "ME-PIN",
+      "lot": "MENUISERIE BOIS",
+      "designation": "Portes intérieures isoplanes pleines",
+      "unite": "m2",
+      "motifs": [
+        "PORTE ISOPLANE PLEINE"
+      ]
+    },
+    {
+      "code": "PE-INT",
+      "lot": "PEINTURE",
+      "designation": "Peinture intérieure à l'eau (murs et plafonds)",
+      "unite": "m2",
+      "motifs": [
+        "PEINTURE INTERIEURE > PEINTURE MATE",
+        "EQUATEX EN BLANC"
+      ]
+    },
+    {
+      "code": "PE-EXT",
+      "lot": "PEINTURE",
+      "designation": "Peinture extérieure à l'eau type Pantex 1300 (façades)",
+      "unite": "m2",
+      "motifs": [
+        "PANTEX 1300 EN BLANC"
+      ]
+    }
   ]
 }

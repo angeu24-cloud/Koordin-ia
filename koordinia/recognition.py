@@ -197,6 +197,15 @@ def build_model(
     for r in sorted(rects, key=lambda r: (round(r.cy - oy, 1), r.cx)):
         bld.columns.append(Column(id="", x=round(r.cx - ox, 3), y=round(r.cy - oy, 3),
                                   b=round(r.width, 3), h=round(r.height, 3)))
+    outside = None
+    if mask is not None:  # extérieur = hors plancher, balcons et terrasses compris
+        outside = ~mask.mask
+        for z in bld.zones:
+            if z["type"] in ("balcon", "exterieur"):
+                zm = SlabMask.from_dict(z["cells"])
+                if zm.mask.shape == outside.shape:
+                    outside |= zm.mask
+    bld.openings = detect_openings(drawing, bbox, ox, oy, mask, outside)
     build_frame(bld, mask, grid_tol=grid_tol, max_span=max_span, beam_width=beam_width, renumber=True)
     bld.axis_x, bld.axis_y = read_axis_labels(drawing, bld.grid_x, bld.grid_y, ox, oy, rects)
     bld.warnings.append(
@@ -297,6 +306,9 @@ def build_frame(
             ))
 
 
+WALL_LAYER_RE = re.compile(r"MUR|WALL|MACON|MAÇON|CLOISON|AGGLO|VOILE|PAROI|FACADE|FAÇADE", re.IGNORECASE)
+
+
 def detect_walls(drawing: Drawing, bbox, ox: float, oy: float, keep_layers: set[str]) -> list[list[float]]:
     """Murs = rectangles minces et longs, ou paires de traits parallèles espacés de 10 à 45 cm.
 
@@ -306,8 +318,14 @@ def detect_walls(drawing: Drawing, bbox, ox: float, oy: float, keep_layers: set[
 
     x0b, y0b, x1b, y1b = bbox
     keep = {k.upper() for k in keep_layers}
+    # S'il existe des calques de murs, on ne lit qu'eux (sinon cadres de fenêtres, marches… passent pour des murs)
+    wall_rx = WALL_LAYER_RE
+    has_wall_layers = any(wall_rx.search(sg.layer or "") for sg in drawing.segments[:200000]) or \
+        any(wall_rx.search(r.layer or "") for r in drawing.rects[:200000])
 
     def usable(layer: str) -> bool:
+        if has_wall_layers:
+            return bool(layer) and (bool(wall_rx.search(layer)) or layer.upper() in keep)
         return not layer or layer.upper() in keep or not NON_BARRIER_RE.search(layer)
 
     walls: list[list[float]] = []
@@ -357,3 +375,86 @@ def detect_walls(drawing: Drawing, bbox, ox: float, oy: float, keep_layers: set[
                         walls.append([mid - ox, lo - oy, mid - ox, hi - oy, gap])
                     break
     return [[round(v, 3) for v in w] for w in walls]
+
+
+OPENING_CLASSES = (
+    ("baie", re.compile(r"COULISS|SLIDING|BAIE", re.IGNORECASE)),
+    ("porte", re.compile(r"PORTE|DOOR", re.IGNORECASE)),
+    ("fenetre", re.compile(r"FENETRE|FENÊTRE|WINDOW|CHASSIS|CHÂSSIS|VITRAGE|MENUIS|NACO|OUVERTURE", re.IGNORECASE)),
+)
+
+
+def detect_openings(drawing: Drawing, bbox, ox: float, oy: float, mask: SlabMask | None,
+                    outside=None) -> list[dict]:
+    """Portes, fenêtres et baies : traits des calques de menuiserie regroupés par proximité.
+
+    Chaque groupe donne une ouverture (largeur = plus grande dimension du groupe) ; elle est
+    « en façade » si elle touche le contour du plancher.
+    """
+    x0b, y0b, x1b, y1b = bbox
+    items: dict[str, list[tuple[float, float, float, float]]] = {k: [] for k, _ in OPENING_CLASSES}
+
+    def classify_layer(layer: str) -> str | None:
+        if re.search(r"TEXT|COT", layer or "", re.IGNORECASE):
+            return None
+        for k, rx in OPENING_CLASSES:
+            if rx.search(layer or ""):
+                return k
+        return None
+
+    for sg in drawing.segments:
+        k = classify_layer(sg.layer)
+        if k and x0b <= sg.x0 <= x1b and y0b <= sg.y0 <= y1b:
+            items[k].append((min(sg.x0, sg.x1), min(sg.y0, sg.y1), max(sg.x0, sg.x1), max(sg.y0, sg.y1)))
+    for r in drawing.rects:
+        k = classify_layer(r.layer)
+        if k and x0b <= r.cx <= x1b and y0b <= r.cy <= y1b:
+            items[k].append((r.x0, r.y0, r.x1, r.y1))
+    out: list[dict] = []
+    ny = nx = 0
+    if mask is not None:
+        ny, nx = mask.mask.shape
+    for kind, boxes in items.items():
+        if not boxes:
+            continue
+        # regroupement (union-find) des boîtes distantes de moins de 10 cm
+        parent = list(range(len(boxes)))
+
+        def find(i: int) -> int:
+            while parent[i] != i:
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+            return i
+
+        tol = 0.07  # traits d'une même menuiserie ; deux baies séparées par un poteau restent distinctes
+        order = sorted(range(len(boxes)), key=lambda i: boxes[i][0])
+        for a_i, i in enumerate(order):
+            bi = boxes[i]
+            for j in order[a_i + 1:]:
+                bj = boxes[j]
+                if bj[0] > bi[2] + tol:
+                    break
+                if bj[1] <= bi[3] + tol and bj[3] >= bi[1] - tol:
+                    parent[find(i)] = find(j)
+        groups: dict[int, list] = {}
+        for i, bx in enumerate(boxes):
+            groups.setdefault(find(i), []).append(bx)
+        for g in groups.values():
+            xa, ya = min(b[0] for b in g), min(b[1] for b in g)
+            xb, yb = max(b[2] for b in g), max(b[3] for b in g)
+            w = max(xb - xa, yb - ya)
+            if not 0.5 <= w <= 6.0:
+                continue
+            cx, cy = (xa + xb) / 2 - ox, (ya + yb) / 2 - oy
+            facade = False
+            if mask is not None:
+                i = int((cx - mask.x0) / mask.res)
+                j = int((cy - mask.y0) / mask.res)
+                r = int(0.6 / mask.res)
+                ext = outside if outside is not None else ~mask.mask
+                win_out = ext[max(0, j - r):j + r + 1, max(0, i - r):i + r + 1]
+                win_in = (~ext)[max(0, j - r):j + r + 1, max(0, i - r):i + r + 1]
+                facade = bool(win_out.size and win_out.any() and win_in.any())
+            out.append({"type": kind, "x": round(cx, 2), "y": round(cy, 2), "largeur": round(w, 2),
+                        "facade": facade})
+    return out

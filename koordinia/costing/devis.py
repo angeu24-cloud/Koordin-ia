@@ -69,6 +69,10 @@ def load_rules(extra: list[dict] | None = None) -> list[dict]:
 
 def build_devis(res, bpu: Bordereau | None, settings: DevisSettings, rules_extra: list[dict] | None = None) -> Devis:
     metre = compute_metre(res, settings)
+    if settings.second_oeuvre:
+        from .archi import archi_metre
+
+        metre.update(archi_metre(res, settings))
     rules = load_rules(rules_extra)
     subst = {"categorie": settings.categorie, "dosage": str(settings.dosage),
              "hourdis": norm(settings.hourdis).replace("+", r"\+")}
@@ -95,8 +99,12 @@ def build_devis(res, bpu: Bordereau | None, settings: DevisSettings, rules_extra
         notes.append("Aucun bordereau de prix : devis quantitatif seul (prix unitaires à saisir).")
     elif missing:
         notes.append(f"{len(missing)} ouvrage(s) sans prix dans le bordereau : {', '.join(missing)}.")
-    notes.append("Métré du gros œuvre de structure (terrassements des fondations, bétons, coffrages, aciers, "
-                 "planchers) ; hors maçonneries, étanchéité, second œuvre et lots techniques.")
+    if settings.second_oeuvre:
+        notes.append("Métré tiré du calcul (structure) et des plans d'architecte (murs, ouvertures, locaux) : "
+                     "maçonnerie, enduits, sols, faïence, étanchéité, menuiseries, peinture. Hors lots techniques "
+                     "(plomberie, électricité, climatisation).")
+    else:
+        notes.append("Métré du gros œuvre de structure seul (second œuvre désactivé).")
     return Devis(res.project.name or "", bpu.currency if bpu else "FCFA", settings.tva,
                  bpu.source if bpu else "", lines, notes)
 

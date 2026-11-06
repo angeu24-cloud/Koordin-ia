@@ -22,6 +22,7 @@ class DevisSettings:
     ratio_escalier: float = 90.0
     ratio_radier: float = 100.0
     epaisseur_plancher: float = 0.20
+    second_oeuvre: bool = True       # maçonnerie, enduits, sols, menuiseries, peinture, étanchéité
 
     @classmethod
     def from_dict(cls, d: dict | None) -> "DevisSettings":
@@ -29,7 +30,8 @@ class DevisSettings:
         for k, v in (d or {}).items():
             k2 = "propreté" if k in ("proprete", "propreté") else k
             if hasattr(s, k2) and v is not None:
-                setattr(s, k2, type(getattr(s, k2))(v))
+                cur = getattr(s, k2)
+                setattr(s, k2, bool(v) if isinstance(cur, bool) else type(cur)(v))
         s.categorie = s.categorie.upper().replace("È", "E").replace("ÈRE", "ERE")
         return s
 

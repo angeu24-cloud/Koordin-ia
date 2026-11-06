@@ -76,6 +76,8 @@ class Building:
     walls: list[list[float]] = field(default_factory=list)  # murs [x0, y0, x1, y1, épaisseur]
     zones: list[dict] = field(default_factory=list)          # locaux (voir zones.Zone), sur la grille de `slab`
     footprint: dict | None = None          # emprise propre du niveau (avant remplacement par le plancher haut)
+    openings: list[dict] = field(default_factory=list)  # portes / fenêtres / baies lues sur le plan du niveau
+    rooms: list[dict] | None = None        # locaux du niveau lui-même (finitions) ; défaut : zones
 
     # ------------------------------------------------------------------ helpers
     def column_map(self) -> dict[str, Column]:
@@ -107,6 +109,8 @@ class Building:
             walls=d.get("walls", []),
             zones=d.get("zones", []),
             footprint=d.get("footprint"),
+            openings=d.get("openings", []),
+            rooms=d.get("rooms"),
         )
 
     def save(self, path: str | Path) -> None:
