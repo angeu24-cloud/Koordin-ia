@@ -61,8 +61,10 @@ def _read_dwg(path: Path) -> DxfDocument:
             src = Path(tmp) / "plan.dwg"
             shutil.copyfile(path, src)
             dst = Path(tmp) / "plan.dxf"
+            # pas de fenêtre de console sous Windows (logiciel de bureau)
+            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
             proc = subprocess.run([tool, "-y", "-o", str(dst), str(src)], capture_output=True, text=True,
-                                  timeout=900)
+                                  timeout=900, creationflags=flags)
             if not dst.exists():
                 raise ImportErrorBatiCalc(f"Échec de la conversion DWG → DXF par LibreDWG :\n{proc.stderr[-800:]}")
             try:

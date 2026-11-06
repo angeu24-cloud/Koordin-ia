@@ -66,6 +66,33 @@ convertisseurs est installé (sinon, enregistrer le plan en DXF depuis AutoCAD :
    ```
 2. **ODA File Converter** (gratuit) : <https://www.opendesign.com/guestfiles/oda_file_converter>.
 
+## Logiciel Windows (installateur)
+
+`BatiCalc-Setup-x.y.z.exe` s'installe comme un logiciel classique : un double-clic, sans
+droits d'administrateur, avec un raccourci dans le menu Démarrer et sur le bureau. Tout est
+inclus (Python, moteur de calcul, LibreDWG pour les DWG), sans connexion internet nécessaire.
+
+- **Téléchargement** : page *Releases* du dépôt GitHub.
+  - *BatiCalc — dernière version* : reconstruite automatiquement à chaque modification.
+  - *vX.Y.Z* : versions officielles.
+- **Utilisation** :
+  - BatiCalc s'ouvre dans sa propre fenêtre ;
+  - une petite fenêtre de contrôle permet de rouvrir l'application, de la **partager avec
+    l'équipe** sur le réseau du bureau, puis de quitter ;
+  - les autres postes et les tablettes ouvrent alors l'adresse affichée.
+- **Données** : `%LOCALAPPDATA%\BatiCalc\donnees`, à sauvegarder. Le journal est
+  `%LOCALAPPDATA%\BatiCalc\baticalc.log`.
+- **Ligne de commande** : `baticalc.exe calculer …`, dans le dossier d'installation.
+- **Construction** : `.github/workflows/installateur-windows.yml`. La construction se fait sur
+  GitHub Actions :
+  1. empaquetage PyInstaller (`packaging/baticalc.spec`) ;
+  2. auto-contrôle du logiciel ;
+  3. installateur Inno Setup (`packaging/baticalc.iss`) ;
+  4. essai d'installation silencieuse ;
+  5. publication.
+
+  Pour publier une version officielle : `git tag v1.0.0 && git push --tags`.
+
 ## Application web (équipe, navigateur, tablette)
 
 ```bash

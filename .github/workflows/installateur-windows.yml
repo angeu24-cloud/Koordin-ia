@@ -1,0 +1,106 @@
+# Construction automatique de l'installateur Windows de BatiCalc (BatiCalc-Setup-x.y.z.exe).
+# - à chaque envoi sur la branche principale ou de développement : version « derniere-version »
+#   (pré-version GitHub, lien de téléchargement stable) ;
+# - à chaque étiquette vX.Y.Z : version officielle.
+name: Installateur Windows
+
+on:
+  push:
+    branches: [main, master, "claude/**"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: installateur-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Version
+        run: |
+          if ("${{ github.ref_type }}" -eq "tag") { $v = "${{ github.ref_name }}".TrimStart("v") }
+          else { $v = "0.1.${{ github.run_number }}" }
+          "BATICALC_VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Version $v"
+
+      - name: Dépendances Python
+        run: |
+          python -m pip install --upgrade pip
+          pip install . pyinstaller==6.22.3 pillow
+
+      - name: LibreDWG pour Windows (lecture des DWG)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $url = gh api "repos/LibreDWG/libredwg/releases?per_page=15" --jq '[.[] | .assets[] | select(.name | test("win64.*\\.zip$"; "i")) | .browser_download_url][0]'
+          if (-not $url) { throw "Aucun binaire Windows (win64) trouvé dans les versions de LibreDWG." }
+          Write-Host "LibreDWG : $url"
+          Invoke-WebRequest $url -OutFile libredwg.zip
+          Expand-Archive libredwg.zip -DestinationPath libredwg_brut
+          $exe = Get-ChildItem libredwg_brut -Recurse -Filter dwg2dxf.exe | Select-Object -First 1
+          if (-not $exe) { throw "dwg2dxf.exe absent de l'archive LibreDWG." }
+          New-Item -ItemType Directory -Force packaging/libredwg | Out-Null
+          Copy-Item "$($exe.DirectoryName)\*" packaging/libredwg -Recurse
+          & packaging/libredwg/dwg2dxf.exe --version
+
+      - name: Icône
+        run: python packaging/make_icon.py
+
+      - name: Empaquetage (PyInstaller)
+        run: pyinstaller --noconfirm packaging/baticalc.spec
+
+      - name: Auto-contrôle du logiciel empaqueté
+        run: |
+          & dist/BatiCalc/baticalc.exe --test rapport_test.txt
+          $code = $LASTEXITCODE
+          Get-Content rapport_test.txt
+          if ($code -ne 0) { throw "Auto-contrôle en échec (code $code)" }
+
+      - name: Installateur (Inno Setup)
+        run: |
+          choco install innosetup -y --no-progress
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" packaging\baticalc.iss
+          Get-ChildItem dist\BatiCalc-Setup-*.exe
+
+      - name: Essai d'installation silencieuse
+        run: |
+          $setup = Get-ChildItem dist\BatiCalc-Setup-*.exe | Select-Object -First 1
+          Start-Process $setup.FullName -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/CURRENTUSER", "/DIR=$env:RUNNER_TEMP\BatiCalcInstalle" -Wait
+          & "$env:RUNNER_TEMP\BatiCalcInstalle\baticalc.exe" --test rapport_installe.txt
+          $code = $LASTEXITCODE
+          Get-Content rapport_installe.txt
+          if ($code -ne 0) { throw "Le logiciel installé ne passe pas l'auto-contrôle." }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BatiCalc-Setup-${{ env.BATICALC_VERSION }}
+          path: dist/BatiCalc-Setup-*.exe
+          retention-days: 30
+
+      - name: Publication (lien de téléchargement)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $setup = (Get-ChildItem dist\BatiCalc-Setup-*.exe | Select-Object -First 1).FullName
+          if ("${{ github.ref_type }}" -eq "tag") {
+            gh release create "${{ github.ref_name }}" $setup --title "BatiCalc ${{ env.BATICALC_VERSION }}" --generate-notes
+          } else {
+            gh release delete derniere-version --yes --cleanup-tag 2>$null
+            $notes = "Version de développement $env:BATICALC_VERSION (branche ${{ github.ref_name }}, commit ${{ github.sha }}). Télécharger BatiCalc-Setup puis double-cliquer."
+            gh release create derniere-version $setup --prerelease --target "${{ github.sha }}" --title "BatiCalc — dernière version ($env:BATICALC_VERSION)" --notes $notes
+          }
