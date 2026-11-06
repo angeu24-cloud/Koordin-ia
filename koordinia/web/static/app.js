@@ -408,7 +408,9 @@ const FILE_INFO = [[/^devis\.xlsx$/, "Devis quantitatif et estimatif (Excel)"], 
   [/\.ifc$/, "Maquette IFC (Revit, ArchiCAD, Robot, CYPECAD, Graitec…)"],
   [/^projet\.json|^modele\.json/, "Modèle structurel (JSON)"], [/^resultats\.json/, "Résultats (JSON)"], [/^geotech/, "Données géotechniques (JSON)"],
   [/^reseau_plomberie/, "Réseau de plomberie + schéma des colonnes (DXF)"], [/^reseau_electricite/, "Réseau électrique + schéma unifilaire (DXF)"],
-  [/^reseau_climatisation/, "Implantation de la climatisation (DXF)"], [/^reseaux\.json$/, "Réseaux : pré-dimensionnement (JSON)"]];
+  [/^reseau_climatisation/, "Implantation de la climatisation (DXF)"], [/^reseaux\.json$/, "Réseaux : pré-dimensionnement (JSON)"],
+  [/^modele_saf\.xlsx$/, "Modèle de calcul SAF (Graitec Advance Design, SCIA, RFEM…)"],
+  [/^robot_koordinia\.zip$/, "Lien Robot : script qui crée et calcule le modèle dans Robot (lancer_robot.bat)"]];
 function panefiles(el, p) {
   const files = (p.fichiers || []).filter((f) => f !== "modele_3d.json");
   el.innerHTML = `<section class="card"><h2 style="margin-top:0">Plans d'exécution et note de calcul</h2>

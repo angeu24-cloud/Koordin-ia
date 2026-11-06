@@ -45,6 +45,8 @@ Plan DWG / DXF / PDF  (dessin unique ou planches multiples)
 | `reseau_climatisation.dxf` | Splits (CV / kW) par local et liaisons |
 | `reseaux.json` | Pré-dimensionnement des réseaux (locaux, circuits, colonnes, TGBT, quantités) |
 | `devis.xlsx` / `devis.json` | Devis quantitatif et estimatif, tous lots |
+| `modele_saf.xlsx` | Modèle de calcul SAF : Graitec Advance Design, SCIA, RFEM… |
+| `robot/` (`robot_koordinia.zip`) | Script qui crée, calcule et enregistre le modèle dans Robot |
 
 ## Installation
 
@@ -108,6 +110,42 @@ L'application reprend tout le moteur, sans aucune ligne de commande pour l'utili
   acceptée en entrée (`koordinia calculer maquette.ifc`, ou dépôt dans l'application web).
   Le programme lit les niveaux, les poteaux, les poutres (sections), les dalles (contour),
   les murs porteurs et les locaux (IfcSpace → usages et charges).
+
+## Liens directs avec les logiciels de calcul (Robot, Graitec Advance Design…)
+
+Chaque calcul produit aussi un **modèle analytique filaire**, prêt à être recalculé :
+- poteaux et poutres en barres, avec leurs sections béton ;
+- poutres recoupées à chaque appui de poutre ou de poteau naissant (raccordement
+  automatique jusqu'à 60 cm de décalage) ;
+- encastrements en pied ;
+- appuis articulés sous les poteaux posés sur des murs ; ceux sans appui trouvé sont signalés
+  « provisoires » ;
+- cas de charge **PP** (poids propre, calculé par le logiciel), **G** et **Q** (charges de plancher
+  réparties par Koordin-IA sur chaque poutre, zones et balcons compris) ;
+- combinaisons ELU (1,35 G + 1,5 Q) et ELS (G + Q).
+
+- **Graitec Advance Design, SCIA Engineer, Dlubal RFEM / RSTAB, SOFiSTiK** :
+  `resultats/modele_saf.xlsx`, au format ouvert **SAF 2.0** (Structural Analysis Format).
+  Dans le logiciel : *Importer › SAF*.
+- **Autodesk Robot Structural Analysis**, avec un pilotage direct par l'API officielle RobotOM :
+  - `resultats/robot/` (ou `robot_koordinia.zip` dans l'application web) contient
+    `robot_modele.py`, `robot_modele.json` et `lancer_robot.bat` ;
+  - sur un poste Windows où Robot est installé, double-cliquer sur `lancer_robot.bat` (Python 3
+    requis ; le script installe `pythonnet`). Le script :
+    - ouvre Robot et crée le modèle ;
+    - lance le calcul ;
+    - enregistre `modele_koordinia.rtd` ;
+    - exporte les réactions d'appui dans `robot_reactions.csv` ;
+  - puis comparer les réactions de Robot à la descente de charges de Koordin-IA :
+
+    ```bash
+    koordinia robot-comparer Projets/Immeuble_X/resultats
+    ```
+
+    Le tableau donne, poteau par poteau, l'écart entre les deux. Un écart de plus de 15 % est
+    signalé : effet de portique, de continuité ou erreur de modèle à examiner.
+- **IFC** (ci-dessus) : maquette physique pour Revit, ArchiCAD, Tekla, ou en complément pour
+  Robot et Graitec.
 
 ## Devis quantitatif et estimatif
 

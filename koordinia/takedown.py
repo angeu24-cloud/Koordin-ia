@@ -79,6 +79,8 @@ class StoreyLoads:
     beam_loads: dict[str, "BeamLoad"] = field(default_factory=dict)
     lines: list["BeamLine"] = field(default_factory=list)
     direct_area: dict[str, float] = field(default_factory=dict)
+    direct_g: dict[str, float] = field(default_factory=dict)   # plancher reporté directement sur le poteau (kN)
+    direct_q: dict[str, float] = field(default_factory=dict)
     slab_area: float = 0.0
     point_loads: dict[str, list[tuple[float, float, float, str]]] = field(default_factory=dict)  # poutre → (t, G, Q, poteau)
     zones: list[tuple] = field(default_factory=list)       # (zone, surface, G moyen, Q moyen)
@@ -377,7 +379,7 @@ def compute_project(proj, ls: LoadSettings) -> TakedownResult:
         (ug, dg), (uq, dq), (ua, da) = parts
         cols = plan.column_map()
         sl = StoreyLoads(s, st.name, proj.floor_label(s), roof, lines=lines, direct_area=da, slab_area=area,
-                         zones=zone_rows, balconies=balconies)
+                         zones=zone_rows, balconies=balconies, direct_g=dict(dg), direct_q=dict(dq))
         direct = da
         if area and sum(direct.values()) > 0.05 * area and not (proj.single_plan and s < N - 1):
             res.warnings.append(

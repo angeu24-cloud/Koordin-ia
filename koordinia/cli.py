@@ -280,6 +280,48 @@ def _write_mep(proj, out: Path, files: list, mep=None) -> object:
     return mep
 
 
+def _base_loads(res) -> dict:
+    from .interop.robot_export import base_loads
+
+    return base_loads(res)
+
+
+def _write_analysis_links(res, out: Path) -> list[Path]:
+    """Liens directs vers les logiciels de calcul : SAF (Graitec Advance Design, SCIA, RFEM…) et Robot."""
+    from .interop.analytical import build_analytical
+    from .interop.robot_export import export_robot
+    from .interop.saf_export import export_saf
+
+    model = build_analytical(res)
+    files = [export_saf(res, out / "modele_saf.xlsx", model)]
+    files += export_robot(res, out, model)
+    for n in model.notes[:-1]:
+        print("•", n)
+    return files
+
+
+def cmd_robot_comparer(args) -> int:
+    from .interop.robot_export import compare_reactions
+
+    out = Path(args.resultats)
+    summary = json.loads((out / "resultats.json").read_text(encoding="utf-8"))
+    csv_path = Path(args.csv) if args.csv else out / "robot" / "robot_reactions.csv"
+    rows = compare_reactions(summary.get("charges_pied_poteaux_kN", {}), csv_path)
+    print(f"{'Poteau':<8}{'Robot G':>10}{'Robot Q':>10}{'Koordin G':>11}{'Koordin Q':>11}{'Écart':>9}")
+    for r in rows:
+        kg = f"{r['koordin_G']:>11.1f}" if r["koordin_G"] is not None else f"{'—':>11}"
+        kq = f"{r['koordin_Q']:>11.1f}" if r["koordin_Q"] is not None else f"{'—':>11}"
+        ec = f"{r['ecart_pct']:>8.1f}%" if r["ecart_pct"] is not None else f"{'—':>9}"
+        print(f"{r['poteau']:<8}{r['robot_G']:>10.1f}{r['robot_Q']:>10.1f}{kg}{kq}{ec}")
+    (out / "robot" / "comparaison_robot.json").write_text(json.dumps(rows, ensure_ascii=False, indent=1),
+                                                         encoding="utf-8")
+    big = [r for r in rows if r["ecart_pct"] is not None and abs(r["ecart_pct"]) > 15]
+    if big:
+        print(f"\n{len(big)} poteau(x) avec un écart > 15 % : effet de continuité / portique à examiner "
+              f"({', '.join(r['poteau'] for r in big)}).")
+    return 0
+
+
 def _write_devis(res, args, out: Path, ls, mep=None) -> list[Path]:
     """Devis quantitatif et estimatif (Excel + JSON) ; prix du bordereau s'il est fourni."""
     try:
@@ -493,6 +535,7 @@ def cmd_calculer(args) -> int:
         files.append(export_ifc(res, out / "modele.ifc"))
     except ImportError:
         print("• Export IFC indisponible : installez ifcopenshell (pip install ifcopenshell).")
+    files += _write_analysis_links(res, out)
     if mep is not None:
         _write_mep(proj, out, files, mep)
     files += _write_devis(res, args, out, ls, mep)
@@ -518,6 +561,7 @@ def cmd_calculer(args) -> int:
                       "nappe_A": str(f.design.bars_x), "nappe_B": str(f.design.bars_y), "ok": f.design.ok}
                      for f in res.footings],
         "avertissements": list(dict.fromkeys(res.warnings)),
+        "charges_pied_poteaux_kN": _base_loads(res),
         "hypotheses_charges": asdict(ls),
         "configuration": config_used,
     }
@@ -662,6 +706,11 @@ def main(argv: list[str] | None = None) -> int:
     sv.add_argument("--hote", default="0.0.0.0", help="Adresse d'écoute (0.0.0.0 = accessible sur le réseau)")
     sv.add_argument("--donnees", default="donnees_koordinia", help="Dossier des comptes, projets et fichiers")
     sv.set_defaults(func=cmd_serveur)
+
+    rc = sub.add_parser("robot-comparer", help="Comparer les réactions calculées par Robot à la descente de charges")
+    rc.add_argument("resultats", help="Dossier des résultats Koordin-IA (contient resultats.json et robot/)")
+    rc.add_argument("--csv", help="Fichier robot_reactions.csv (par défaut : <resultats>/robot/robot_reactions.csv)")
+    rc.set_defaults(func=cmd_robot_comparer)
 
     e = sub.add_parser("exemple", help="Générer un plan d'exemple (DXF + PDF)")
     e.add_argument("-o", "--sortie", default="exemple")
