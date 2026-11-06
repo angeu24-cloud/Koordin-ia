@@ -1,0 +1,11 @@
+{
+  "name": "Koordin-IA",
+  "short_name": "Koordin-IA",
+  "description": "Modélisation et dimensionnement de structures à partir des plans d'architecte",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f7f9",
+  "theme_color": "#1f4e79",
+  "lang": "fr",
+  "icons": [{"src": "/static/icone.svg", "sizes": "any", "type": "image/svg+xml"}]
+}

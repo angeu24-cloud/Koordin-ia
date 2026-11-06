@@ -59,6 +59,37 @@ convertisseurs est installé (sinon, enregistrer le plan en DXF depuis AutoCAD :
    ```
 2. **ODA File Converter** (gratuit) : <https://www.opendesign.com/guestfiles/oda_file_converter>.
 
+## Application web (équipe, navigateur, tablette)
+
+```bash
+pip install -e .
+koordinia serveur --port 8000 --donnees ./donnees_koordinia
+# puis ouvrir http://adresse-du-serveur:8000 depuis un ordinateur ou une tablette
+```
+
+L'application reprend tout le moteur, sans aucune ligne de commande pour l'utilisateur :
+
+| Onglet | Contenu |
+|---|---|
+| **Plan & niveaux** | dépôt du DWG/DXF/PDF ; planches et niveaux détectés (hauteurs et planche de chaque niveau modifiables) |
+| **Hypothèses** | règlement (BAEL, EC2), matériaux, plancher, charges, contrainte du sol |
+| **Géotechnique** | import du rapport, valeurs extraites avec leur phrase source, correction, **validation** |
+| **Calcul** | lancement en tâche de fond, chiffres clés, métré, points à vérifier, journal |
+| **Modèle 2D / 3D** | plan de chaque plancher (zoom, déplacement, toucher un élément pour ses résultats) et **vue 3D** du bâtiment |
+| **Plans & note** | téléchargement de la note de calcul et des plans DXF |
+| **Équipe** | membres et rôles (propriétaire, éditeur, lecteur), journal d'activité partagé |
+
+- **Comptes et sécurité** : mots de passe chiffrés (scrypt), session par cookie protégé,
+  droits vérifiés à chaque requête. Le lecteur consulte, l'éditeur modifie et calcule,
+  le propriétaire gère l'équipe.
+- **Données** : une base SQLite et un dossier par projet (plans, configuration,
+  résultats), dans le dossier `--donnees`, à sauvegarder régulièrement.
+- **Installable** sur tablette ou ordinateur (« Ajouter à l'écran d'accueil »).
+  three.js est intégré à l'application, qui fonctionne donc sur un réseau local sans internet.
+- **Mise en service pour une équipe** : sur un serveur du bureau ou un serveur loué, avec
+  l'image Docker fournie (`Dockerfile`, LibreDWG inclus pour les DWG). Pour un accès par
+  internet, placer l'application derrière un proxy HTTPS (Caddy, Nginx).
+
 ## Démarrer un nouveau projet
 
 Chaque projet a son dossier et son fichier `koordinia.json`. Ce fichier contient le plan,

@@ -11,16 +11,20 @@ requires-python = ">=3.10"
 dependencies = [
     "ezdxf>=1.1",
     "pymupdf>=1.24",
+    "numpy>=1.24",
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7"]
+dev = ["pytest>=7", "httpx>=0.27"]
 
 [project.scripts]
 koordinia = "koordinia.cli:main"
 
 [tool.setuptools.package-data]
-koordinia = ["data/*.json"]
+koordinia = ["data/*.json", "web/static/*", "web/static/vendor/three/*", "web/static/vendor/three/controls/*"]
 
 [tool.setuptools.packages.find]
 include = ["koordinia*"]

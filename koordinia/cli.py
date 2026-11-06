@@ -391,6 +391,9 @@ def cmd_calculer(args) -> int:
     files.append(plan_fondations(res, out / "plan_fondations.dxf", foot_names))
     files.append(plan_ferraillage(res, out / "plans_ferraillage.dxf", col_t, beam_t, foot_t))
     files += list(write_report(res, out))
+    from .outputs.viewer import write_viewer
+
+    files.append(write_viewer(res, out))
 
     config_used = {k: v for k, v in vars(args).items()
                    if k not in ("func", "niveaux_set", "hauteur_set", "cmd") and not callable(v)}
@@ -473,6 +476,17 @@ def cmd_niveaux(args) -> int:
     return 0
 
 
+def cmd_serveur(args) -> int:
+    import uvicorn
+
+    from .web import create_app
+
+    app = create_app(args.donnees)
+    print(f"Koordin-IA : http://{args.hote}:{args.port}  (données : {Path(args.donnees).resolve()})")
+    uvicorn.run(app, host=args.hote, port=args.port, log_level="warning")
+    return 0
+
+
 def cmd_exemple(args) -> int:
     from .sample import write_sample_dxf, write_sample_pdf
 
@@ -532,6 +546,12 @@ def main(argv: list[str] | None = None) -> int:
     it.add_argument("--norme", choices=["bael", "ec2"])
     it.add_argument("--force", action="store_true", help="Remplacer une configuration existante")
     it.set_defaults(func=cmd_init)
+
+    sv = sub.add_parser("serveur", help="Lancer l'application web (équipe, navigateur, tablette)")
+    sv.add_argument("--port", type=int, default=8000)
+    sv.add_argument("--hote", default="0.0.0.0", help="Adresse d'écoute (0.0.0.0 = accessible sur le réseau)")
+    sv.add_argument("--donnees", default="donnees_koordinia", help="Dossier des comptes, projets et fichiers")
+    sv.set_defaults(func=cmd_serveur)
 
     e = sub.add_parser("exemple", help="Générer un plan d'exemple (DXF + PDF)")
     e.add_argument("-o", "--sortie", default="exemple")
