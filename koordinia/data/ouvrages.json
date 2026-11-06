@@ -451,6 +451,537 @@
       "motifs": [
         "PANTEX 1300 EN BLANC"
       ]
+    },
+    {
+      "code": "PL-WC",
+      "lot": "PLOMBERIE SANITAIRE",
+      "designation": "WC à l'anglaise complet",
+      "unite": "u",
+      "motifs": [
+        "APPAREILS SANITAIRES",
+        "WC A L'ANGLAISE"
+      ]
+    },
+    {
+      "code": "PL-LAV",
+      "lot": "PLOMBERIE SANITAIRE",
+      "designation": "Ensemble lavabo",
+      "unite": "u",
+      "motifs": [
+        "APPAREILS SANITAIRES",
+        "ENSEMBLE LAVABO$"
+      ]
+    },
+    {
+      "code": "PL-DOU",
+      "lot": "PLOMBERIE SANITAIRE",
+      "designation": "Receveur de douche 70×70",
+      "unite": "u",
+      "motifs": [
+        "RECEVEUR DE DOUCHE"
+      ]
+    },
+    {
+      "code": "PL-MDO",
+      "lot": "PLOMBERIE SANITAIRE",
+      "designation": "Mélangeur de douche",
+      "unite": "u",
+      "motifs": [
+        "MELANGEUR DE DOUCHE"
+      ]
+    },
+    {
+      "code": "PL-EVI",
+      "lot": "PLOMBERIE SANITAIRE",
+      "designation": "Ensemble évier avec égouttoir",
+      "unite": "u",
+      "motifs": [
+        "ENSEMBLE EVIER"
+      ]
+    },
+    {
+      "code": "PL-URI",
+      "lot": "PLOMBERIE SANITAIRE",
+      "designation": "Urinoir en applique",
+      "unite": "u",
+      "motifs": [
+        "URINOIR"
+      ]
+    },
+    {
+      "code": "PL-SIP",
+      "lot": "PLOMBERIE SANITAIRE",
+      "designation": "Siphon de sol",
+      "unite": "u",
+      "motifs": [
+        "SIPHON DE SOL"
+      ]
+    },
+    {
+      "code": "PL-CHE",
+      "lot": "PLOMBERIE SANITAIRE",
+      "designation": "Chauffe-eau électrique 50 litres",
+      "unite": "u",
+      "motifs": [
+        "CHAUFFE-EAU ELECTRIQUE 50"
+      ]
+    },
+    {
+      "code": "PL-VAN",
+      "lot": "PLOMBERIE SANITAIRE",
+      "designation": "Vanne d'arrêt de bloc sanitaire",
+      "unite": "u",
+      "motifs": [
+        "VANNES D'ARRET",
+        "20X27"
+      ]
+    },
+    {
+      "code": "PL-EF20",
+      "lot": "PLOMBERIE SANITAIRE",
+      "designation": "Tube PVC pression Ø20 (eau froide)",
+      "unite": "ml",
+      "motifs": [
+        "TUBE PVC PRESSION",
+        "14,8X20"
+      ]
+    },
+    {
+      "code": "PL-EF25",
+      "lot": "PLOMBERIE SANITAIRE",
+      "designation": "Tube PVC pression Ø25 (eau froide)",
+      "unite": "ml",
+      "motifs": [
+        "TUBE PVC PRESSION",
+        "21X25"
+      ]
+    },
+    {
+      "code": "PL-EF32",
+      "lot": "PLOMBERIE SANITAIRE",
+      "designation": "Tube PVC pression Ø32 (eau froide)",
+      "unite": "ml",
+      "motifs": [
+        "TUBE PVC PRESSION",
+        "26,8X32"
+      ]
+    },
+    {
+      "code": "PL-EF40",
+      "lot": "PLOMBERIE SANITAIRE",
+      "designation": "Tube PVC pression Ø40 (eau froide)",
+      "unite": "ml",
+      "motifs": [
+        "TUBE PVC PRESSION",
+        "33,6X40"
+      ]
+    },
+    {
+      "code": "PL-EF50",
+      "lot": "PLOMBERIE SANITAIRE",
+      "designation": "Tube PVC pression Ø50 (eau froide)",
+      "unite": "ml",
+      "motifs": [
+        "TUBE PVC PRESSION",
+        "42X50"
+      ]
+    },
+    {
+      "code": "PL-EF63",
+      "lot": "PLOMBERIE SANITAIRE",
+      "designation": "Tube PVC pression Ø63 (eau froide)",
+      "unite": "ml",
+      "motifs": [
+        "TUBE PVC PRESSION",
+        "53X63"
+      ]
+    },
+    {
+      "code": "PL-EF75",
+      "lot": "PLOMBERIE SANITAIRE",
+      "designation": "Tube PVC pression Ø75 (eau froide)",
+      "unite": "ml",
+      "motifs": [
+        "TUBE PVC PRESSION",
+        "63,2X75"
+      ]
+    },
+    {
+      "code": "PL-EV40",
+      "lot": "PLOMBERIE SANITAIRE",
+      "designation": "Tube PVC évacuation Ø40 (EU)",
+      "unite": "ml",
+      "motifs": [
+        "TUBE PVC EVACUATION",
+        "33,6X40"
+      ]
+    },
+    {
+      "code": "PL-EV50",
+      "lot": "PLOMBERIE SANITAIRE",
+      "designation": "Tube PVC évacuation Ø50 (EU)",
+      "unite": "ml",
+      "motifs": [
+        "TUBE PVC EVACUATION",
+        "43,6X50"
+      ]
+    },
+    {
+      "code": "PL-EV90",
+      "lot": "PLOMBERIE SANITAIRE",
+      "designation": "Tube PVC évacuation Ø90 (chutes EU)",
+      "unite": "ml",
+      "motifs": [
+        "TUBE PVC EVACUATION",
+        "83,6X90"
+      ]
+    },
+    {
+      "code": "PL-EV100",
+      "lot": "PLOMBERIE SANITAIRE",
+      "designation": "Tube PVC évacuation Ø100 (WC et chutes EV)",
+      "unite": "ml",
+      "motifs": [
+        "TUBE PVC EVACUATION",
+        "93,6X100"
+      ]
+    },
+    {
+      "code": "PL-COL",
+      "lot": "ASSAINISSEMENT",
+      "designation": "Collecteur PVC Ø125 en pied de colonne",
+      "unite": "ml",
+      "motifs": [
+        "TUYAU EN PVC SERIE EU/EV",
+        "125"
+      ]
+    },
+    {
+      "code": "PL-REG",
+      "lot": "ASSAINISSEMENT",
+      "designation": "Regard en béton 50×50×50",
+      "unite": "u",
+      "motifs": [
+        "REGARD EN BETON",
+        "50X50X50"
+      ]
+    },
+    {
+      "code": "PL-FOS",
+      "lot": "ASSAINISSEMENT",
+      "designation": "Fosse septique en maçonnerie (selon usagers)",
+      "unite": "u",
+      "motifs": [
+        "FOSSE SEPTIQUE EN MACONNERIE",
+        "{usagers} USAGERS"
+      ]
+    },
+    {
+      "code": "EL-PL1",
+      "lot": "ÉLECTRICITÉ",
+      "designation": "Point lumineux sur simple allumage (1er point du local)",
+      "unite": "u",
+      "motifs": [
+        "SIMPLE ALLUMAGE",
+        "1 POINT LUMINEUX"
+      ]
+    },
+    {
+      "code": "EL-PLS",
+      "lot": "ÉLECTRICITÉ",
+      "designation": "Plus-value pour point lumineux supplémentaire",
+      "unite": "u",
+      "motifs": [
+        "SIMPLE ALLUMAGE",
+        "PLUS-VALUE POUR POINT"
+      ]
+    },
+    {
+      "code": "EL-LGR",
+      "lot": "ÉLECTRICITÉ",
+      "designation": "Luminaire à grille 2×36 W",
+      "unite": "u",
+      "motifs": [
+        "LUMINAIRE A GRILLE"
+      ]
+    },
+    {
+      "code": "EL-LRE",
+      "lot": "ÉLECTRICITÉ",
+      "designation": "Réglette fluo-duo 1,20 étanche",
+      "unite": "u",
+      "motifs": [
+        "REGLETTE FLUO-DUO 1,20 ETANCHE"
+      ]
+    },
+    {
+      "code": "EL-LHU",
+      "lot": "ÉLECTRICITÉ",
+      "designation": "Hublot étanche avec grille de protection",
+      "unite": "u",
+      "motifs": [
+        "HUBLOT ETANCHE \\+ GRILLE"
+      ]
+    },
+    {
+      "code": "EL-LPF",
+      "lot": "ÉLECTRICITÉ",
+      "designation": "Plafonnier à globe opalin Ø250",
+      "unite": "u",
+      "motifs": [
+        "GLOBE EN VERRE OPALIN",
+        "250"
+      ]
+    },
+    {
+      "code": "EL-INT",
+      "lot": "ÉLECTRICITÉ",
+      "designation": "Interrupteur simple allumage",
+      "unite": "u",
+      "motifs": [
+        "INTERRUPTEURS",
+        "INTERRUPTEUR SA$"
+      ]
+    },
+    {
+      "code": "EL-INE",
+      "lot": "ÉLECTRICITÉ",
+      "designation": "Interrupteur simple allumage étanche",
+      "unite": "u",
+      "motifs": [
+        "INTERRUPTEUR SA ETANCHE"
+      ]
+    },
+    {
+      "code": "EL-PCA",
+      "lot": "ÉLECTRICITÉ",
+      "designation": "Alimentation de prise de courant",
+      "unite": "u",
+      "motifs": [
+        "ALIMENTATION DE PRISE DE COURANT"
+      ]
+    },
+    {
+      "code": "EL-PC",
+      "lot": "ÉLECTRICITÉ",
+      "designation": "Prise de courant 2P+T",
+      "unite": "u",
+      "motifs": [
+        "PRISES DE COURANT",
+        "PRISE DE COURANT \\+ TERRE$"
+      ]
+    },
+    {
+      "code": "EL-PCE",
+      "lot": "ÉLECTRICITÉ",
+      "designation": "Prise de courant 2P+T étanche",
+      "unite": "u",
+      "motifs": [
+        "PRISE DE COURANT \\+ TERRE ETANCHE"
+      ]
+    },
+    {
+      "code": "EL-CLA",
+      "lot": "ÉLECTRICITÉ",
+      "designation": "Alimentation de climatiseur",
+      "unite": "u",
+      "motifs": [
+        "ALIMENTATION DE CLIMATISEUR"
+      ]
+    },
+    {
+      "code": "EL-TD",
+      "lot": "ÉLECTRICITÉ",
+      "designation": "Tableau divisionnaire d'étage (coffret 13 modules)",
+      "unite": "u",
+      "motifs": [
+        "COFFRET 13 MODULES"
+      ]
+    },
+    {
+      "code": "EL-TDM",
+      "lot": "ÉLECTRICITÉ",
+      "designation": "Tableau divisionnaire d'étage (coffret métallique 600×400×250)",
+      "unite": "u",
+      "motifs": [
+        "COFFRET METALLIQUE 600X400"
+      ]
+    },
+    {
+      "code": "EL-D15",
+      "lot": "ÉLECTRICITÉ",
+      "designation": "Disjoncteur 15 A (circuits d'éclairage)",
+      "unite": "u",
+      "motifs": [
+        "DISJONCTEUR DISMATIC 15A"
+      ]
+    },
+    {
+      "code": "EL-D20",
+      "lot": "ÉLECTRICITÉ",
+      "designation": "Disjoncteur 20 A (prises, climatisation)",
+      "unite": "u",
+      "motifs": [
+        "DISJONCTEUR DISMATIC 20A"
+      ]
+    },
+    {
+      "code": "EL-ID",
+      "lot": "ÉLECTRICITÉ",
+      "designation": "Interrupteur différentiel 30 mA 2×40 A",
+      "unite": "u",
+      "motifs": [
+        "INTERRUPTEUR DIFFERENTIEL 2X40A"
+      ]
+    },
+    {
+      "code": "EL-C6",
+      "lot": "ÉLECTRICITÉ",
+      "designation": "Câble HG 1000 5×6 mm² (colonne d'étage)",
+      "unite": "ml",
+      "motifs": [
+        "CABLE HG 1000 5X6"
+      ]
+    },
+    {
+      "code": "EL-C10",
+      "lot": "ÉLECTRICITÉ",
+      "designation": "Câble HG 1000 5×10 mm² (colonne d'étage)",
+      "unite": "ml",
+      "motifs": [
+        "CABLE HG 1000 5X10"
+      ]
+    },
+    {
+      "code": "EL-C16",
+      "lot": "ÉLECTRICITÉ",
+      "designation": "Câble HG 1000 4×16 mm² (colonne d'étage)",
+      "unite": "ml",
+      "motifs": [
+        "CABLE HG 1000 4X16"
+      ]
+    },
+    {
+      "code": "EL-C25",
+      "lot": "ÉLECTRICITÉ",
+      "designation": "Câble HG 1000 4×25 mm² (colonne d'étage)",
+      "unite": "ml",
+      "motifs": [
+        "CABLE HG 1000 4X25"
+      ]
+    },
+    {
+      "code": "EL-C35",
+      "lot": "ÉLECTRICITÉ",
+      "designation": "Câble armé 4×35 mm² (colonne d'étage)",
+      "unite": "ml",
+      "motifs": [
+        "4X35MM2"
+      ]
+    },
+    {
+      "code": "EL-C70",
+      "lot": "ÉLECTRICITÉ",
+      "designation": "Câble HG 1000 3×70+50 mm² (colonne d'étage)",
+      "unite": "ml",
+      "motifs": [
+        "3X70\\+50"
+      ]
+    },
+    {
+      "code": "EL-C95",
+      "lot": "ÉLECTRICITÉ",
+      "designation": "Câble 3×95+35 mm² (colonne d'étage)",
+      "unite": "ml",
+      "motifs": [
+        "3X95 \\+ 35"
+      ]
+    },
+    {
+      "code": "EL-C150",
+      "lot": "ÉLECTRICITÉ",
+      "designation": "Câble HG 1000 3×150+70 mm² (colonne d'étage)",
+      "unite": "ml",
+      "motifs": [
+        "3X150\\+70"
+      ]
+    },
+    {
+      "code": "EL-TGB",
+      "lot": "ÉLECTRICITÉ",
+      "designation": "Tableau général basse tension (TGBT)",
+      "unite": "u",
+      "motifs": [
+        "COFFRET MARINA 1000X800"
+      ]
+    },
+    {
+      "code": "EL-DGT",
+      "lot": "ÉLECTRICITÉ",
+      "designation": "Disjoncteur de protection tête de câble 4×100 A",
+      "unite": "u",
+      "motifs": [
+        "TETE DE CABLE 4X100A"
+      ]
+    },
+    {
+      "code": "CL-S1_0",
+      "lot": "CLIMATISATION",
+      "designation": "Split système 1 CV",
+      "unite": "u",
+      "motifs": [
+        "SPLIT SYSTEME",
+        "SPLIT 1 CV"
+      ]
+    },
+    {
+      "code": "CL-S1_5",
+      "lot": "CLIMATISATION",
+      "designation": "Split système 1,5 CV",
+      "unite": "u",
+      "motifs": [
+        "SPLIT SYSTEME",
+        "SPLIT 1,5 CV"
+      ]
+    },
+    {
+      "code": "CL-S2_0",
+      "lot": "CLIMATISATION",
+      "designation": "Split système 2 CV",
+      "unite": "u",
+      "motifs": [
+        "SPLIT SYSTEME",
+        "SPLIT 2 CV"
+      ]
+    },
+    {
+      "code": "CL-S3_0",
+      "lot": "CLIMATISATION",
+      "designation": "Split système 3 CV",
+      "unite": "u",
+      "motifs": [
+        "SPLIT SYSTEME",
+        "SPLIT 3 CV"
+      ]
+    },
+    {
+      "code": "CL-LIA",
+      "lot": "CLIMATISATION",
+      "designation": "Liaisons frigorifiques cuivre isolées",
+      "unite": "ml",
+      "motifs": [
+        "LIAISONS? FRIGORIFIQUES?"
+      ]
+    },
+    {
+      "code": "CL-CON",
+      "lot": "CLIMATISATION",
+      "designation": "Évacuation des condensats PVC Ø32",
+      "unite": "ml",
+      "motifs": [
+        "TUBE PVC EVACUATION",
+        "25,6X32"
+      ]
     }
   ]
 }

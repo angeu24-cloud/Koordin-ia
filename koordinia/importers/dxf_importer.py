@@ -10,7 +10,7 @@ from pathlib import Path
 import ezdxf
 from ezdxf.document import Drawing as DxfDocument
 
-from ..geometry import Drawing, Rect, Segment, Text, rect_from_points
+from ..geometry import Drawing, Mark, Rect, Segment, Text, rect_from_points
 
 # $INSUNITS -> facteur vers le mètre
 _INSUNITS = {1: 0.0254, 2: 0.3048, 4: 0.001, 5: 0.01, 6: 1.0}
@@ -101,10 +101,12 @@ def _unit_factor(doc: DxfDocument, units: str | None) -> tuple[float, str | None
     return f, f"Unités du DXF non définies : supposées en {name} (forcer avec --unites)."
 
 
-def _iter_entities(entities, depth: int = 0):
+def _iter_entities(entities, depth: int = 0, blocks: list | None = None):
     for e in entities:
         if e.dxftype() == "INSERT" and depth < 6:
             parent_layer = e.dxf.layer
+            if blocks is not None:
+                blocks.append(e)
             try:
                 children = list(e.virtual_entities())
             except Exception:
@@ -112,7 +114,7 @@ def _iter_entities(entities, depth: int = 0):
             for child in children:
                 if child.dxf.layer == "0":
                     child.dxf.layer = parent_layer
-            yield from _iter_entities(children, depth + 1)
+            yield from _iter_entities(children, depth + 1, blocks)
         else:
             yield e
 
@@ -144,7 +146,8 @@ def import_dxf(path: str | Path, units: str | None = None) -> Drawing:
             a, b = pts[i], pts[(i + 1) % n]
             out.segments.append(Segment(a[0], a[1], b[0], b[1], layer, dashed))
 
-    for e in _iter_entities(doc.modelspace()):
+    inserts: list = []
+    for e in _iter_entities(doc.modelspace(), blocks=inserts):
         t = e.dxftype()
         layer = e.dxf.get("layer", "0").upper()
         try:
@@ -174,6 +177,13 @@ def import_dxf(path: str | Path, units: str | None = None) -> Drawing:
             elif t == "MTEXT":
                 ins = e.dxf.insert
                 out.texts.append(Text(ins.x * k, ins.y * k, e.plain_text(), layer))
+            elif t in ("CIRCLE", "ARC"):
+                c, r = e.dxf.center, e.dxf.radius
+                out.marks.append(Mark((c.x - r) * k, (c.y - r) * k, (c.x + r) * k, (c.y + r) * k, layer, t))
+            elif t == "ELLIPSE":
+                c, ma = e.dxf.center, e.dxf.major_axis
+                r = (ma.x ** 2 + ma.y ** 2) ** 0.5
+                out.marks.append(Mark((c.x - r) * k, (c.y - r) * k, (c.x + r) * k, (c.y + r) * k, layer, t))
         except Exception:  # entité malformée : on l'ignore
             continue
     return out

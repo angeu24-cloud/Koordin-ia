@@ -406,7 +406,9 @@ const FILE_INFO = [[/^devis\.xlsx$/, "Devis quantitatif et estimatif (Excel)"], 
   [/^coffrage_/, "Plan de coffrage (DXF)"], [/^plan_coffrage/, "Plan de coffrage (DXF)"], [/^plan_fondations/, "Plan de fondations (DXF)"],
   [/^plans_ferraillage/, "Plans de ferraillage (DXF)"], [/^controle/, "Plan de contrôle du modèle (DXF)"],
   [/\.ifc$/, "Maquette IFC (Revit, ArchiCAD, Robot, CYPECAD, Graitec…)"],
-  [/^projet\.json|^modele\.json/, "Modèle structurel (JSON)"], [/^resultats\.json/, "Résultats (JSON)"], [/^geotech/, "Données géotechniques (JSON)"]];
+  [/^projet\.json|^modele\.json/, "Modèle structurel (JSON)"], [/^resultats\.json/, "Résultats (JSON)"], [/^geotech/, "Données géotechniques (JSON)"],
+  [/^reseau_plomberie/, "Réseau de plomberie + schéma des colonnes (DXF)"], [/^reseau_electricite/, "Réseau électrique + schéma unifilaire (DXF)"],
+  [/^reseau_climatisation/, "Implantation de la climatisation (DXF)"], [/^reseaux\.json$/, "Réseaux : pré-dimensionnement (JSON)"]];
 function panefiles(el, p) {
   const files = (p.fichiers || []).filter((f) => f !== "modele_3d.json");
   el.innerHTML = `<section class="card"><h2 style="margin-top:0">Plans d'exécution et note de calcul</h2>

@@ -62,11 +62,24 @@ class Text:
 
 
 @dataclass
+class Mark:
+    """Arc, cercle, ellipse ou bloc : boîte englobante (équipements, symboles)."""
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+    layer: str = ""
+    kind: str = ""        # ARC, CIRCLE, ELLIPSE, BLOCK
+    name: str = ""        # nom du bloc éventuel
+
+
+@dataclass
 class Drawing:
     """Contenu géométrique d'un plan, après import."""
     rects: list[Rect] = field(default_factory=list)
     segments: list[Segment] = field(default_factory=list)
     texts: list[Text] = field(default_factory=list)
+    marks: list[Mark] = field(default_factory=list)
     source: str = ""
     warnings: list[str] = field(default_factory=list)
 

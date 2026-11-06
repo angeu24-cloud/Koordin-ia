@@ -261,7 +261,26 @@ def _hourdis_for(g_floor: float) -> str:
     return "30 + 5"
 
 
-def _write_devis(res, args, out: Path, ls) -> list[Path]:
+def _write_mep(proj, out: Path, files: list, mep=None) -> object:
+    """Réseaux (plomberie, électricité, climatisation) : calcul, plans DXF, reseaux.json."""
+    from dataclasses import asdict as _asdict
+
+    from .mep.design import design_mep
+    from .mep.drawings import write_mep_drawings
+
+    mep = mep or design_mep(proj)
+    data = {"storeys": [{k: v for k, v in _asdict(s).items() if k not in ("lights", "sockets", "switches")}
+                        for s in mep.storeys], "colonnes": mep.columns, "tgbt": mep.tgbt, "notes": mep.notes,
+            "quantites": {k: round(v[0], 2) for k, v in mep.quantities.items()}}
+    (out / "reseaux.json").write_text(json.dumps(data, ensure_ascii=False, indent=1, default=_json_default),
+                                      encoding="utf-8")
+    files += write_mep_drawings(proj, mep, out) + [out / "reseaux.json"]
+    for n in mep.notes:
+        print("•", n)
+    return mep
+
+
+def _write_devis(res, args, out: Path, ls, mep=None) -> list[Path]:
     """Devis quantitatif et estimatif (Excel + JSON) ; prix du bordereau s'il est fourni."""
     try:
         from .costing.bpu import Bordereau, import_bpu
@@ -284,7 +303,7 @@ def _write_devis(res, args, out: Path, ls) -> list[Path]:
     except ImportError:
         print("• Devis Excel indisponible : installez openpyxl.")
         return []
-    dv = build_devis(res, bpu, DevisSettings.from_dict(cfg))
+    dv = build_devis(res, bpu, DevisSettings.from_dict(cfg), mep=mep)
     (out / "devis.json").write_text(json.dumps(dv.to_dict(), ensure_ascii=False, indent=1), encoding="utf-8")
     files = [write_excel(dv, out / "devis.xlsx"), out / "devis.json"]
     print(f"Devis : {dv.total_ht:,.0f} {dv.currency} HT".replace(",", " ") +
@@ -459,7 +478,12 @@ def cmd_calculer(args) -> int:
             files += _control_plans(proj, drawing, out)
     files.append(plan_fondations(res, out / "plan_fondations.dxf", foot_names))
     files.append(plan_ferraillage(res, out / "plans_ferraillage.dxf", col_t, beam_t, foot_t))
-    files += list(write_report(res, out))
+    mep = None
+    if not getattr(args, "sans_reseaux", False):
+        from .mep.design import design_mep
+
+        mep = design_mep(proj)
+    files += list(write_report(res, out, mep))
     from .outputs.viewer import write_viewer
 
     files.append(write_viewer(res, out))
@@ -469,7 +493,9 @@ def cmd_calculer(args) -> int:
         files.append(export_ifc(res, out / "modele.ifc"))
     except ImportError:
         print("• Export IFC indisponible : installez ifcopenshell (pip install ifcopenshell).")
-    files += _write_devis(res, args, out, ls)
+    if mep is not None:
+        _write_mep(proj, out, files, mep)
+    files += _write_devis(res, args, out, ls, mep)
 
     config_used = {k: v for k, v in vars(args).items()
                    if k not in ("func", "niveaux_set", "hauteur_set", "cmd") and not callable(v)}
@@ -598,6 +624,7 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--sans-degression", action="store_true", help="Ne pas appliquer la dégression de Q")
     c.add_argument("--sol", type=float, default=None,
                    help="Contrainte admissible du sol (MPa) ; sinon celle du rapport géotechnique, sinon 0,20")
+    c.add_argument("--sans-reseaux", action="store_true", help="Ne pas calculer les réseaux (plomberie, élec, clim)")
     c.add_argument("--bpu", help="Bordereau de prix pour le devis : bpu.json, .xls, .xlsx ou .csv")
     c.set_defaults(devis=None)
     c.add_argument("--geotech", help="Données géotechniques : geotech.json (validé) ou rapport PDF à lire")

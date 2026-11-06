@@ -67,15 +67,33 @@ def load_rules(extra: list[dict] | None = None) -> list[dict]:
     return rules
 
 
-def build_devis(res, bpu: Bordereau | None, settings: DevisSettings, rules_extra: list[dict] | None = None) -> Devis:
+FOSSE_SIZES = [5, 10, 15, 20, 30, 40, 50, 70, 90, 100]
+
+
+def build_devis(res, bpu: Bordereau | None, settings: DevisSettings, rules_extra: list[dict] | None = None,
+                mep=None) -> Devis:
     metre = compute_metre(res, settings)
     if settings.second_oeuvre:
         from .archi import archi_metre
 
         metre.update(archi_metre(res, settings))
+    usagers = 0
+    if mep is not None:
+        from .metre import Quantity
+
+        for code, (qty, det) in mep.quantities.items():
+            qq = Quantity(code)
+            for lbl, v in det:
+                qq.add(lbl, v)
+            metre[code] = qq
+        import re as _re
+
+        m = next((_re.search(r"(\d+) usagers", lbl) for lbl, v in mep.quantities.get("PL-FOS", [0, []])[1]), None)
+        usagers = int(m.group(1)) if m else 0
     rules = load_rules(rules_extra)
+    fosse = next((n for n in FOSSE_SIZES if n >= usagers), FOSSE_SIZES[-1]) if usagers else 10
     subst = {"categorie": settings.categorie, "dosage": str(settings.dosage),
-             "hourdis": norm(settings.hourdis).replace("+", r"\+")}
+             "hourdis": norm(settings.hourdis).replace("+", r"\+"), "usagers": str(fosse)}
     lines: list[DevisLine] = []
     missing = []
     for r in rules:
@@ -101,8 +119,12 @@ def build_devis(res, bpu: Bordereau | None, settings: DevisSettings, rules_extra
         notes.append(f"{len(missing)} ouvrage(s) sans prix dans le bordereau : {', '.join(missing)}.")
     if settings.second_oeuvre:
         notes.append("Métré tiré du calcul (structure) et des plans d'architecte (murs, ouvertures, locaux) : "
-                     "maçonnerie, enduits, sols, faïence, étanchéité, menuiseries, peinture. Hors lots techniques "
-                     "(plomberie, électricité, climatisation).")
+                     "maçonnerie, enduits, sols, faïence, étanchéité, menuiseries, peinture" +
+                     (" ; réseaux (plomberie, électricité, climatisation) pré-dimensionnés." if mep is not None else
+                      ". Hors lots techniques."))
+    if usagers and usagers > FOSSE_SIZES[-1]:
+        notes.append(f"Fosse septique : {usagers} usagers estimés > {FOSSE_SIZES[-1]} (plusieurs fosses ou "
+                     "raccordement au réseau public).")
     else:
         notes.append("Métré du gros œuvre de structure seul (second œuvre désactivé).")
     return Devis(res.project.name or "", bpu.currency if bpu else "FCFA", settings.tva,

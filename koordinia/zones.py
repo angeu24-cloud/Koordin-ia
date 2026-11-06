@@ -81,7 +81,7 @@ def read_labels(drawing: Drawing, catalogue: list[Usage]) -> list[RoomLabel]:
         m = AREA_RE.search(txt)
         area = float(m.group(1).replace(",", ".")) if m else None
         name = AREA_RE.sub("", txt).strip(" :-")
-        if not re.search(r"[A-Za-zÀ-ÿ]{2,}", name):
+        if len(re.findall(r"[A-Za-zÀ-ÿ]", name)) < 2:  # « W.C » compte deux lettres
             if area:
                 areas.append((t.x, t.y, area))  # surface seule : rattachée au nom le plus proche
             continue

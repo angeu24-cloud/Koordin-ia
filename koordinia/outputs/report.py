@@ -65,7 +65,7 @@ th { background-color: #ddd; }
 """
 
 
-def build_html(res: ProjectResult) -> str:
+def build_html(res: ProjectResult, mep=None) -> str:
     b, ls, code, td = res.building, res.loads, res.code, res.takedown
     proj = res.project
     e = html.escape
@@ -304,14 +304,67 @@ def build_html(res: ProjectResult) -> str:
                    f"<td>{_f(ratio, 0)}</td></tr>")
     out.append(f"<tr><th>Total</th><th>{_f(tot_c, 2)}</th><th>{_f(tot_s, 0)}</th><th></th></tr></table>")
     out.append("<p class='small'>Hors planchers (dalles / poutrelles), longrines et chaînages.</p>")
+    if mep is not None:
+        out += mep_html(mep)
     out.append("</body></html>")
     return "\n".join(out)
 
 
-def write_report(res: ProjectResult, folder: Path) -> tuple[Path, Path]:
+def mep_html(mep) -> list[str]:
+    """Section « Réseaux » : électricité (NF C 15-100), climatisation, plomberie (DTU 60.11)."""
+    e = html.escape
+    out = ["<h2>9. Réseaux — électricité</h2>",
+           "<p class='small'>Éclairage : n = E·S / (Φ·η) avec η = facteur d'utilisation × maintenance ; prises et "
+           "circuits selon NF C 15-100 (éclairage 1,5 mm² / 16 A, prises 2,5 mm² / 20 A, différentiels 30 mA) ; "
+           "câble TGBT → TD choisi pour Iz ≥ 1,25·Ib et ΔU ≤ 3 %.</p>",
+           "<table><tr><th>Niveau</th><th>Local</th><th>Usage</th><th>S (m²)</th><th>Luminaires</th>"
+           "<th>Type</th><th>Prises</th><th>Interr.</th></tr>"]
+    for s in mep.storeys:
+        for r in s.rooms:
+            out.append(f"<tr><td>{e(s.name)}</td><td>{e(r['local'])}</td><td>{e(r['usage'])}</td>"
+                       f"<td>{_f(r['surface'])}</td><td>{r['luminaires']}</td><td>{e(r['type_luminaire'])}</td>"
+                       f"<td>{r['prises']}</td><td>{r['interrupteurs']}</td></tr>")
+    out.append("</table><table><tr><th>Tableau</th><th>Circuits écl. / prises / clim</th><th>P (kW)</th>"
+               "<th>Ib (A)</th><th>Câble</th><th>L (m)</th><th>ΔU (%)</th></tr>")
+    for s in mep.storeys:
+        c, f = s.circuits, s.feeder
+        out.append(f"<tr><td>TD {e(s.name)}</td><td>{c.get('eclairage', 0)} / {c.get('prises', 0)} / "
+                   f"{c.get('clim', 0)}</td><td>{_f(s.power_kw)}</td><td>{_f(s.current_a)}</td>"
+                   f"<td>{f.get('section_mm2', '')} mm²</td><td>{_f(f.get('longueur_m', 0))}</td>"
+                   f"<td>{_f(f.get('chute_tension', 0), 2)}</td></tr>")
+    t = mep.tgbt
+    out.append(f"<tr><th>TGBT</th><th></th><th>{_f(t.get('puissance_kw', 0))}</th><th>{_f(t.get('courant_a', 0))}</th>"
+               f"<th colspan=3>{_f(t.get('puissance_kva', 0))} kVA</th></tr></table>")
+    out.append("<h2>10. Réseaux — climatisation</h2><p class='small'>Bilan simplifié : apports surfaciques par "
+               "usage + apports solaires des vitrages en façade ; splits muraux choisis dans la gamme courante.</p>"
+               "<table><tr><th>Niveau</th><th>Local</th><th>Apports (kW)</th><th>Unités</th></tr>")
+    for s in mep.storeys:
+        for r in s.rooms:
+            if r["splits"]:
+                out.append(f"<tr><td>{e(s.name)}</td><td>{e(r['local'])}</td><td>{_f(r['apports_kw'], 2)}</td>"
+                           f"<td>{e(', '.join(r['splits']))}</td></tr>")
+        out.append(f"<tr><th>{e(s.name)}</th><th>Total</th><th>{_f(s.cool_kw)}</th><th>{len(s.units)} unités</th></tr>")
+    out.append("</table>")
+    out.append("<h2>11. Réseaux — plomberie sanitaire</h2><p class='small'>DTU 60.11 : débit probable "
+               "Qp = y·ΣQb avec y = 0,8/√(n−1) ; diamètres PVC pression pour v ≤ 2 m/s (branches) et "
+               "v ≤ 1,5 m/s (colonnes) ; chutes Ø100 avec WC, Ø90 sinon.</p>"
+               "<table><tr><th>Colonne</th><th>Tronçon</th><th>Appareils desservis</th><th>Qp (l/s)</th>"
+               "<th>Ø EF</th><th>v (m/s)</th><th>Ø chute</th></tr>")
+    for col in mep.columns:
+        for sg in col.get("segments", []):
+            out.append(f"<tr><td>{e(col['id'])}</td><td>{e(sg['niveau'])}</td><td>{sg['appareils']}</td>"
+                       f"<td>{_f(sg['debit_probable_ls'], 3)}</td><td>{sg['dn']}</td><td>{_f(sg['vitesse_ms'], 2)}</td>"
+                       f"<td>{sg['chute_dn']}</td></tr>")
+    out.append("</table>")
+    if mep.notes:
+        out.append("<ul>" + "".join(f"<li class='small'>{e(n)}</li>" for n in mep.notes) + "</ul>")
+    return out
+
+
+def write_report(res: ProjectResult, folder: Path, mep=None) -> tuple[Path, Path]:
     import pymupdf
 
-    html_doc = build_html(res)
+    html_doc = build_html(res, mep)
     html_path = folder / "note_de_calcul.html"
     html_path.write_text(html_doc, encoding="utf-8")
     pdf_path = folder / "note_de_calcul.pdf"

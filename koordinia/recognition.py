@@ -206,6 +206,10 @@ def build_model(
                 if zm.mask.shape == outside.shape:
                     outside |= zm.mask
     bld.openings = detect_openings(drawing, bbox, ox, oy, mask, outside)
+    if bld.zones:
+        from .mep.fixtures import detect_fixtures
+
+        bld.fixtures = detect_fixtures(drawing, bld.zones, ox, oy)
     build_frame(bld, mask, grid_tol=grid_tol, max_span=max_span, beam_width=beam_width, renumber=True)
     bld.axis_x, bld.axis_y = read_axis_labels(drawing, bld.grid_x, bld.grid_y, ox, oy, rects)
     bld.warnings.append(

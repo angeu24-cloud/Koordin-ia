@@ -40,6 +40,11 @@ Plan DWG / DXF / PDF  (dessin unique ou planches multiples)
 | `controle_modele.dxf` | Plan importé (gris) superposé au modèle reconnu (rouge) |
 | `modele.json` | Modèle structurel éditable |
 | `resultats.json` | Résultats synthétiques + métré |
+| `reseau_plomberie.dxf` | Appareils, blocs sanitaires, colonnes EF/EU + schéma des colonnes montantes |
+| `reseau_electricite.dxf` | Luminaires, prises, interrupteurs, TD par niveau + schéma unifilaire |
+| `reseau_climatisation.dxf` | Splits (CV / kW) par local et liaisons |
+| `reseaux.json` | Pré-dimensionnement des réseaux (locaux, circuits, colonnes, TGBT, quantités) |
+| `devis.xlsx` / `devis.json` | Devis quantitatif et estimatif, tous lots |
 
 ## Installation
 
@@ -146,6 +151,41 @@ koordinia calculer --config Projets/Immeuble_X/koordinia.json  # → resultats/d
     - étanchéité de terrasse (forme de pente, revêtement, relevés, protection) ;
     - menuiseries aluminium et bois, appuis de fenêtre, peintures.
 - **Application web** : onglet *Devis* (import du bordereau, réglages, tableau, téléchargement).
+
+## Réseaux : plomberie, électricité, climatisation
+
+Calculés automatiquement à partir des locaux lus sur les plans d'architecte (désactivable
+par `--sans-reseaux`). Paramètres modifiables : `koordinia/data/mep.json`.
+
+- **Appareils sanitaires**, dans cet ordre de priorité :
+  1. blocs nommés (WC, lavabo, douche, évier, urinoir) ;
+  2. étiquettes des pièces d'eau (« W.C », « Douche », « Toilettes », « Vestiaires »,
+     « Cuisine », « SDB »…), avec un équipement déduit du nom et de la surface ;
+  3. tracés sur des calques sanitaires.
+- **Plomberie (DTU 60.11)** :
+  - appareils regroupés en blocs sanitaires, avec une colonne montante par gaine ;
+  - débit probable Qp = y·ΣQb, avec y = 0,8/√(n−1) ;
+  - diamètres PVC pression pour v ≤ 2 m/s (branches) et v ≤ 1,5 m/s (colonnes) ;
+  - chutes Ø100 (avec WC) ou Ø90 ;
+  - collecteurs, regards et fosse septique dimensionnée d'après le nombre d'usagers.
+- **Électricité (NF C 15-100)** :
+  - luminaires n = E·S/(Φ·η) selon l'éclairement de l'usage ;
+  - prises, interrupteurs et circuits (éclairage 16 A, prises 20 A, clim 20 A, différentiels 30 mA) ;
+  - un tableau divisionnaire par niveau ;
+  - câble TGBT → TD choisi pour Iz ≥ 1,25·Ib et ΔU ≤ 3 % ;
+  - puissance du TGBT, avec une alerte au-delà de 100 A (poste à étudier avec la CIE).
+- **Climatisation** :
+  - bilan simplifié en climat tropical (apports surfaciques par usage + vitrages en façade) ;
+  - splits muraux de 1 à 5 CV ;
+  - alerte VRV / gainable pour les gros plateaux.
+- **Sorties** :
+  - trois plans DXF, avec les niveaux côte à côte ;
+  - une section « Réseaux » dans la note de calcul ;
+  - les quantités, intégrées au devis dans les lots Plomberie, Assainissement, Électricité et
+    Climatisation, avec les prix du bordereau.
+
+Ce sont des pré-dimensionnements d'avant-projet : ils sont à reprendre par le bureau
+d'études fluides pour l'exécution.
 
 ## Démarrer un nouveau projet
 

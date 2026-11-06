@@ -1,0 +1,210 @@
+{
+  "_aide": "Paramètres des réseaux (plomberie, électricité, climatisation), modifiables. Usages = noms du catalogue usages.json. eclairement en lux ; prises : une prise par 'prise_m2' m² avec un minimum 'prise_min' ; clim_w_m2 : apports thermiques (W/m²), 0 = local non climatisé ; luminaire : clé de la table 'luminaires'.",
+  "usages": {
+    "Bureaux": {
+      "eclairement": 500,
+      "prise_m2": 5,
+      "prise_min": 2,
+      "clim_w_m2": 150,
+      "luminaire": "grille"
+    },
+    "Salle de réunion / restauration": {
+      "eclairement": 500,
+      "prise_m2": 8,
+      "prise_min": 2,
+      "clim_w_m2": 200,
+      "luminaire": "grille"
+    },
+    "Commerce": {
+      "eclairement": 500,
+      "prise_m2": 10,
+      "prise_min": 2,
+      "clim_w_m2": 180,
+      "luminaire": "grille"
+    },
+    "Logement": {
+      "eclairement": 200,
+      "prise_m2": 5,
+      "prise_min": 3,
+      "clim_w_m2": 120,
+      "luminaire": "plafonnier"
+    },
+    "Hall / circulation": {
+      "eclairement": 150,
+      "prise_m2": 30,
+      "prise_min": 1,
+      "clim_w_m2": 0,
+      "luminaire": "plafonnier"
+    },
+    "Escalier": {
+      "eclairement": 150,
+      "prise_m2": 0,
+      "prise_min": 0,
+      "clim_w_m2": 0,
+      "luminaire": "hublot"
+    },
+    "Sanitaires / vestiaires": {
+      "eclairement": 200,
+      "prise_m2": 0,
+      "prise_min": 1,
+      "clim_w_m2": 0,
+      "luminaire": "hublot",
+      "etanche": true
+    },
+    "Local technique": {
+      "eclairement": 300,
+      "prise_m2": 10,
+      "prise_min": 2,
+      "clim_w_m2": 0,
+      "luminaire": "reglette",
+      "etanche": true
+    },
+    "Réservoir / bâche à eau": {
+      "eclairement": 150,
+      "prise_m2": 0,
+      "prise_min": 1,
+      "clim_w_m2": 0,
+      "luminaire": "reglette",
+      "etanche": true
+    },
+    "Stockage / archives": {
+      "eclairement": 150,
+      "prise_m2": 20,
+      "prise_min": 1,
+      "clim_w_m2": 0,
+      "luminaire": "reglette",
+      "etanche": true
+    },
+    "Parking": {
+      "eclairement": 75,
+      "prise_m2": 100,
+      "prise_min": 1,
+      "clim_w_m2": 0,
+      "luminaire": "reglette",
+      "etanche": true
+    },
+    "Local ordures": {
+      "eclairement": 100,
+      "prise_m2": 0,
+      "prise_min": 1,
+      "clim_w_m2": 0,
+      "luminaire": "hublot",
+      "etanche": true
+    },
+    "Balcon / loggia": {
+      "eclairement": 100,
+      "prise_m2": 0,
+      "prise_min": 0,
+      "clim_w_m2": 0,
+      "luminaire": "hublot",
+      "etanche": true
+    },
+    "Terrasse accessible": {
+      "eclairement": 50,
+      "prise_m2": 0,
+      "prise_min": 1,
+      "clim_w_m2": 0,
+      "luminaire": "hublot",
+      "etanche": true
+    },
+    "_defaut": {
+      "eclairement": 200,
+      "prise_m2": 20,
+      "prise_min": 1,
+      "clim_w_m2": 0,
+      "luminaire": "reglette"
+    }
+  },
+  "luminaires": {
+    "grille": {
+      "designation": "Luminaire à grille 2×36 W",
+      "flux_lm": 6700,
+      "puissance_w": 72
+    },
+    "reglette": {
+      "designation": "Réglette fluo-duo 1,20 étanche",
+      "flux_lm": 6700,
+      "puissance_w": 72
+    },
+    "plafonnier": {
+      "designation": "Plafonnier (point lumineux)",
+      "flux_lm": 1500,
+      "puissance_w": 20
+    },
+    "hublot": {
+      "designation": "Hublot étanche",
+      "flux_lm": 1000,
+      "puissance_w": 15
+    }
+  },
+  "electricite": {
+    "facteur_utilisation_maintenance": 0.5,
+    "points_par_circuit_eclairage": 8,
+    "prises_par_circuit": 8,
+    "puissance_prise_w": 200,
+    "ks_prises": 0.25,
+    "eer_clim": 3.0,
+    "cos_phi": 0.85,
+    "tension_v": 400,
+    "chute_tension_max": 0.03,
+    "ks_general": 0.8
+  },
+  "plomberie": {
+    "_aide": "debit EF en l/s ; diametre d'évacuation en mm",
+    "appareils": {
+      "wc": {
+        "designation": "WC à l'anglaise",
+        "debit": 0.12,
+        "evacuation": 100
+      },
+      "lavabo": {
+        "designation": "Ensemble lavabo",
+        "debit": 0.2,
+        "evacuation": 40
+      },
+      "douche": {
+        "designation": "Receveur de douche",
+        "debit": 0.2,
+        "evacuation": 50
+      },
+      "evier": {
+        "designation": "Ensemble évier avec égouttoir",
+        "debit": 0.2,
+        "evacuation": 50
+      },
+      "urinoir": {
+        "designation": "Urinoir en applique",
+        "debit": 0.15,
+        "evacuation": 50
+      }
+    },
+    "vitesse_max_branche": 1.5,
+    "vitesse_max_colonne": 2.0,
+    "regroupement_m": 6.0
+  },
+  "climatisation": {
+    "_aide": "splits disponibles (CV → puissance frigorifique kW) ; apports solaires par m² de vitrage",
+    "splits": [
+      [
+        1.0,
+        2.6
+      ],
+      [
+        1.5,
+        3.5
+      ],
+      [
+        2.0,
+        5.3
+      ],
+      [
+        3.0,
+        7.0
+      ]
+    ],
+    "apport_vitrage_w_m2": 220,
+    "facteur_protection": 0.5,
+    "occupation_m2_par_personne": 10,
+    "apport_personne_w": 100
+  }
+}

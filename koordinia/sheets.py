@@ -120,6 +120,7 @@ def crop(drawing: Drawing, bbox: tuple[float, float, float, float]) -> Drawing:
                   if x0 <= min(s.x0, s.x1) and max(s.x0, s.x1) <= x1 and y0 <= min(s.y0, s.y1)
                   and max(s.y0, s.y1) <= y1],
         texts=[t for t in drawing.texts if x0 <= t.x <= x1 and y0 <= t.y <= y1],
+        marks=[m for m in drawing.marks if x0 <= (m.x0 + m.x1) / 2 <= x1 and y0 <= (m.y0 + m.y1) / 2 <= y1],
         source=drawing.source,
         warnings=list(drawing.warnings),
     )
