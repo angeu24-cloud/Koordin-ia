@@ -1,15 +1,15 @@
 """Fichier de configuration par projet : création, utilisation, priorité de la ligne de commande."""
 import json
 
-from koordinia.cli import main
-from koordinia.sample import write_sample_dxf
+from baticalc.cli import main
+from baticalc.sample import write_sample_dxf
 
 
 def test_init_and_calculate_with_config(tmp_path):
     plan = write_sample_dxf(tmp_path / "archi.dxf")
     proj = tmp_path / "Immeuble_Test"
     assert main(["init", str(proj), "--plan", str(plan), "--nom", "Immeuble test R+3"]) == 0
-    cfg_path = proj / "koordinia.json"
+    cfg_path = proj / "baticalc.json"
     cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
     assert cfg["projet"]["plan"] == "plans/archi.dxf"
     assert (proj / "plans" / "archi.dxf").exists()
@@ -40,4 +40,19 @@ def test_init_and_calculate_with_config(tmp_path):
 
 def test_missing_plan_message(tmp_path, capsys):
     assert main(["calculer", "-o", str(tmp_path)]) == 1
-    assert "koordinia.json" in capsys.readouterr().err
+    assert "baticalc.json" in capsys.readouterr().err
+
+
+def test_old_name_still_accepted(tmp_path, monkeypatch):
+    """Ancien nom (Koordin-IA) : variables d'environnement et dossier de données repris."""
+    from baticalc import data_dir, env
+
+    monkeypatch.delenv("BATICALC_DWG2DXF", raising=False)
+    monkeypatch.setenv("KOORDINIA_DWG2DXF", "/opt/dwg2dxf")
+    assert env("DWG2DXF") == "/opt/dwg2dxf"
+    monkeypatch.setenv("BATICALC_DWG2DXF", "/nouveau")
+    assert env("DWG2DXF") == "/nouveau"
+    (tmp_path / "donnees_koordinia").mkdir()
+    assert data_dir(str(tmp_path / "donnees_baticalc")) == str(tmp_path / "donnees_koordinia")
+    (tmp_path / "donnees_baticalc").mkdir()
+    assert data_dir(str(tmp_path / "donnees_baticalc")) == str(tmp_path / "donnees_baticalc")

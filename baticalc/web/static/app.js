@@ -1,4 +1,4 @@
-// Koordin-IA — interface web (sans étape de compilation)
+// BatiCalc — interface web (sans étape de compilation)
 const $app = document.getElementById("app");
 const state = { user: null, project: null, tab: "plan", model: null, storey: 0, view: "2d", poll: null };
 
@@ -410,7 +410,7 @@ const FILE_INFO = [[/^devis\.xlsx$/, "Devis quantitatif et estimatif (Excel)"], 
   [/^reseau_plomberie/, "Réseau de plomberie + schéma des colonnes (DXF)"], [/^reseau_electricite/, "Réseau électrique + schéma unifilaire (DXF)"],
   [/^reseau_climatisation/, "Implantation de la climatisation (DXF)"], [/^reseaux\.json$/, "Réseaux : pré-dimensionnement (JSON)"],
   [/^modele_saf\.xlsx$/, "Modèle de calcul SAF (Graitec Advance Design, SCIA, RFEM…)"],
-  [/^robot_koordinia\.zip$/, "Lien Robot : script qui crée et calcule le modèle dans Robot (lancer_robot.bat)"]];
+  [/^robot_baticalc\.zip$/, "Lien Robot : script qui crée et calcule le modèle dans Robot (lancer_robot.bat)"]];
 function panefiles(el, p) {
   const files = (p.fichiers || []).filter((f) => f !== "modele_3d.json");
   el.innerHTML = `<section class="card"><h2 style="margin-top:0">Plans d'exécution et note de calcul</h2>

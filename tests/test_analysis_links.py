@@ -8,14 +8,14 @@ import types
 import openpyxl
 import pytest
 
-from koordinia.codes import get_code
-from koordinia.design import run
-from koordinia.importers import import_plan
-from koordinia.interop.analytical import build_analytical
-from koordinia.interop.robot_export import base_loads, compare_reactions, export_robot
-from koordinia.interop.saf_export import SHEETS, export_saf
-from koordinia.model import LoadSettings
-from koordinia.recognition import build_model
+from baticalc.codes import get_code
+from baticalc.design import run
+from baticalc.importers import import_plan
+from baticalc.interop.analytical import build_analytical
+from baticalc.interop.robot_export import base_loads, compare_reactions, export_robot
+from baticalc.interop.saf_export import SHEETS, export_saf
+from baticalc.model import LoadSettings
+from baticalc.recognition import build_model
 
 from test_zones import write_rooms_dxf
 
@@ -104,7 +104,7 @@ class _Any:
 
 def test_robot_script_runs_against_api_stub(result, tmp_path, monkeypatch):
     py, bat, js, zp = export_robot(result, tmp_path)
-    assert zp.name == "robot_koordinia.zip"
+    assert zp.name == "robot_baticalc.zip"
     assert bat.read_bytes().startswith(b"@echo off")
     _Any.log = []
     monkeypatch.setitem(sys.modules, "clr", types.SimpleNamespace(AddReference=lambda p: None))
@@ -124,4 +124,4 @@ def test_robot_script_runs_against_api_stub(result, tmp_path, monkeypatch):
     assert len(rows) == 3 * len(m.supports)
     cmp = compare_reactions(base_loads(result), reac)
     assert cmp[0]["robot_G"] == pytest.approx(15.0) and cmp[0]["robot_Q"] == pytest.approx(5.0)
-    assert cmp[0]["koordin_G"] > 0
+    assert cmp[0]["baticalc_G"] > 0

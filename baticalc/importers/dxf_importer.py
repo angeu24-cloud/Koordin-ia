@@ -17,7 +17,7 @@ _INSUNITS = {1: 0.0254, 2: 0.3048, 4: 0.001, 5: 0.01, 6: 1.0}
 _UNIT_NAMES = {"mm": 0.001, "cm": 0.01, "m": 1.0}
 
 
-class ImportErrorKoordinia(RuntimeError):
+class ImportErrorBatiCalc(RuntimeError):
     pass
 
 
@@ -28,7 +28,7 @@ def read_dwg_or_dxf(path: str | Path) -> DxfDocument:
         return ezdxf.readfile(path)
     if suffix == ".dwg" or _is_dwg(path):
         return _read_dwg(path)
-    raise ImportErrorKoordinia(f"Format non reconnu : {suffix}")
+    raise ImportErrorBatiCalc(f"Format non reconnu : {suffix}")
 
 
 def _is_dwg(path: Path) -> bool:
@@ -40,8 +40,10 @@ def _is_dwg(path: Path) -> bool:
 
 
 def find_dwg2dxf() -> str | None:
-    """Convertisseur LibreDWG : variable KOORDINIA_DWG2DXF, sinon `dwg2dxf` dans le PATH."""
-    env = os.environ.get("KOORDINIA_DWG2DXF")
+    """Convertisseur LibreDWG : variable BATICALC_DWG2DXF, sinon `dwg2dxf` dans le PATH."""
+    from .. import env as _env
+
+    env = _env("DWG2DXF")
     if env and Path(env).exists():
         return env
     return shutil.which("dwg2dxf")
@@ -62,7 +64,7 @@ def _read_dwg(path: Path) -> DxfDocument:
             proc = subprocess.run([tool, "-y", "-o", str(dst), str(src)], capture_output=True, text=True,
                                   timeout=900)
             if not dst.exists():
-                raise ImportErrorKoordinia(f"Échec de la conversion DWG → DXF par LibreDWG :\n{proc.stderr[-800:]}")
+                raise ImportErrorBatiCalc(f"Échec de la conversion DWG → DXF par LibreDWG :\n{proc.stderr[-800:]}")
             try:
                 return ezdxf.readfile(dst)
             except ezdxf.DXFStructureError:
@@ -70,9 +72,9 @@ def _read_dwg(path: Path) -> DxfDocument:
 
                 doc, _ = recover.readfile(dst)
                 return doc
-    raise ImportErrorKoordinia(
+    raise ImportErrorBatiCalc(
         "Lecture DWG impossible : aucun convertisseur installé.\n"
-        "  - LibreDWG (libre) : outil « dwg2dxf » dans le PATH, ou variable KOORDINIA_DWG2DXF ;\n"
+        "  - LibreDWG (libre) : outil « dwg2dxf » dans le PATH, ou variable BATICALC_DWG2DXF ;\n"
         "  - ou ODA File Converter (gratuit) : https://www.opendesign.com/guestfiles/oda_file_converter ;\n"
         "  - ou, dans AutoCAD : ENREGSOUS (SAVEAS) → format DXF, puis relancez avec le .dxf."
     )

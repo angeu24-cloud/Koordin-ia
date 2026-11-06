@@ -1,10 +1,10 @@
-"""Import IFC (Revit, ArchiCAD, Tekla, Robot, CYPECAD, Graitec…) vers un projet Koordin-IA.
+"""Import IFC (Revit, ArchiCAD, Tekla, Robot, CYPECAD, Graitec…) vers un projet BatiCalc.
 
 Lecture des niveaux (IfcBuildingStorey), poteaux (IfcColumn), poutres (IfcBeam),
 dalles (IfcSlab), murs (IfcWall) et locaux (IfcSpace), à partir de leur géométrie
 réelle (moteur géométrique d'IfcOpenShell, coordonnées globales).
 
-Convention Koordin-IA : l'étage k porte le plancher situé à l'altitude du niveau k+1.
+Convention BatiCalc : l'étage k porte le plancher situé à l'altitude du niveau k+1.
 """
 from __future__ import annotations
 

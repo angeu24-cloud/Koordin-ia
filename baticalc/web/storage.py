@@ -47,13 +47,31 @@ def check_password(password: str, stored: str) -> bool:
     return hmac.compare_digest(hash_password(password, bytes.fromhex(salt)).split("$")[2], dk)
 
 
+def _is_empty(db_path: Path) -> bool:
+    """Base sans aucun compte (créée vide par erreur)."""
+    try:
+        con = sqlite3.connect(db_path)
+        try:
+            return con.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 0
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return True
+
+
 class Storage:
     def __init__(self, root: str | Path):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         (self.root / "projets").mkdir(exist_ok=True)
         self._lock = threading.Lock()
-        self.db = sqlite3.connect(self.root / "koordinia.sqlite", check_same_thread=False)
+        db_path = self.root / "baticalc.sqlite"
+        old = self.root / "koordinia.sqlite"   # base créée sous l'ancien nom de l'application
+        if old.exists() and (not db_path.exists() or _is_empty(db_path)):
+            if db_path.exists():
+                db_path.unlink()
+            old.rename(db_path)
+        self.db = sqlite3.connect(db_path, check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
         self.db.commit()

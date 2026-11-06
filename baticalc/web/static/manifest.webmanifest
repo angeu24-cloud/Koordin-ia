@@ -1,6 +1,6 @@
 {
-  "name": "Koordin-IA",
-  "short_name": "Koordin-IA",
+  "name": "BatiCalc",
+  "short_name": "BatiCalc",
   "description": "Modélisation et dimensionnement de structures à partir des plans d'architecte",
   "start_url": "/",
   "display": "standalone",

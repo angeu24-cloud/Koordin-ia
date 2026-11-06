@@ -5,8 +5,8 @@ import pymupdf
 import pytest
 from fastapi.testclient import TestClient
 
-from koordinia.sample import write_sample_dxf
-from koordinia.web import create_app
+from baticalc.sample import write_sample_dxf
+from baticalc.web import create_app
 
 
 @pytest.fixture
@@ -79,7 +79,7 @@ def test_full_workflow_and_team(app, tmp_path):
     assert m["semelles"]
     pdf = ana.get(f"/api/projets/{pid}/fichiers/note_de_calcul.pdf")
     assert pdf.status_code == 200 and pdf.content[:4] == b"%PDF"
-    assert ana.get(f"/api/projets/{pid}/fichiers/..%2Fkoordinia.json").status_code in (400, 404)
+    assert ana.get(f"/api/projets/{pid}/fichiers/..%2Fbaticalc.json").status_code in (400, 404)
 
     # équipe : Ben lecteur → consulte mais ne modifie pas
     assert ana.post(f"/api/projets/{pid}/membres", json={"email": "ben@bet.ci", "role": "lecteur"}).status_code == 200
@@ -113,6 +113,22 @@ def test_bad_upload(app, tmp_path):
 def test_interface_served(app):
     c = TestClient(app)
     r = c.get("/")
-    assert r.status_code == 200 and "Koordin-IA" in r.text
+    assert r.status_code == 200 and "BatiCalc" in r.text
     assert c.get("/static/app.js").status_code == 200
-    assert c.get("/manifest.webmanifest").json()["short_name"] == "Koordin-IA"
+    assert c.get("/manifest.webmanifest").json()["short_name"] == "BatiCalc"
+
+
+def test_old_database_is_taken_over(tmp_path):
+    """Données créées sous l'ancien nom (koordinia.sqlite) : comptes repris automatiquement,
+    même si une base vide a déjà été créée sous le nouveau nom."""
+    from baticalc.web.storage import Storage
+
+    st = Storage(tmp_path)
+    st.create_user("ancien@bet.ci", "Ancien", "motdepasse1")
+    st.db.close()
+    (tmp_path / "baticalc.sqlite").rename(tmp_path / "koordinia.sqlite")
+    Storage(tmp_path / "vide").db.close()
+    (tmp_path / "vide" / "baticalc.sqlite").rename(tmp_path / "baticalc.sqlite")   # base vide nouvelle
+    st2 = Storage(tmp_path)
+    assert st2.authenticate("ancien@bet.ci", "motdepasse1")
+    assert not (tmp_path / "koordinia.sqlite").exists()

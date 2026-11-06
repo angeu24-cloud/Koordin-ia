@@ -8,7 +8,7 @@ avec les logiciels de calcul (Robot Structural Analysis, Graitec Advance Design,
   poteau ou extrémité de poutre qui ne repose sur rien (mur porteur, appui manquant) ;
 - charges :
   - cas « PP » : poids propre des barres, calculé par le logiciel ;
-  - cas « G » et « Q » : charges de plancher réparties par Koordin-IA sur chaque poutre
+  - cas « G » et « Q » : charges de plancher réparties par BatiCalc sur chaque poutre
     (charge uniforme équivalente, kN/m), y compris les zones et balcons, plus les surfaces
     reportées directement sur les poteaux (charges nodales).
 """
@@ -39,7 +39,7 @@ class Member:
     section: str
     n1: str
     n2: str
-    ref: str           # repère Koordin-IA (P12, B3…)
+    ref: str           # repère BatiCalc (P12, B3…)
     storey: int
 
 
@@ -79,7 +79,7 @@ def build_analytical(res: ProjectResult) -> AnalyticalModel:
 
     data = viewer_data(res)
     proj = res.project
-    model = AnalyticalModel(proj.name or "Projet Koordin-IA", _concrete_class(res))
+    model = AnalyticalModel(proj.name or "Projet BatiCalc", _concrete_class(res))
     td = res.takedown
     nodes: dict[tuple[int, int, int], str] = {}
 
@@ -174,7 +174,7 @@ def build_analytical(res: ProjectResult) -> AnalyticalModel:
         if other:
             model.notes.append("Appuis articulés PROVISOIRES sous " + ", ".join(other) + " : aucun élément porteur "
                                "trouvé (poteau ou poutre manquant, portée trop longue) — à corriger dans le modèle.")
-    # charges de plancher (G, Q) réparties par Koordin-IA
+    # charges de plancher (G, Q) réparties par BatiCalc
     model.line_loads = {"G": [], "Q": []}
     model.node_loads = {"G": [], "Q": []}
     for k, lv in enumerate(data["niveaux"]):
@@ -207,7 +207,7 @@ def build_analytical(res: ProjectResult) -> AnalyticalModel:
                     model.node_loads["G"].append((n, round(gd, 2)))
                 if qd > 1e-3:
                     model.node_loads["Q"].append((n, round(qd, 2)))
-    model.notes.append("Charges G et Q de plancher réparties par Koordin-IA sur les poutres (charge uniforme "
+    model.notes.append("Charges G et Q de plancher réparties par BatiCalc sur les poutres (charge uniforme "
                        "équivalente, même résultante). Poids propre des barres calculé par le logiciel (cas PP).")
     return model
 

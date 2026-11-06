@@ -4,12 +4,12 @@ import math
 import ezdxf
 import pytest
 
-from koordinia.codes import get_code
-from koordinia.design import run
-from koordinia.importers import import_plan
-from koordinia.model import LoadSettings
-from koordinia.recognition import build_model
-from koordinia.stairs import design_stair
+from baticalc.codes import get_code
+from baticalc.design import run
+from baticalc.importers import import_plan
+from baticalc.model import LoadSettings
+from baticalc.recognition import build_model
+from baticalc.stairs import design_stair
 
 
 def test_geometry_blondel():

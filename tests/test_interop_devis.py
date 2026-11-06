@@ -5,22 +5,23 @@ from pathlib import Path
 import openpyxl
 import pytest
 
-from koordinia.cli import main
-from koordinia.codes import get_code
-from koordinia.costing.bpu import import_bpu
-from koordinia.costing.devis import build_devis, write_excel
-from koordinia.costing.metre import DevisSettings
-from koordinia.design import run
-from koordinia.importers import import_plan
-from koordinia.model import LoadSettings
-from koordinia.recognition import build_model
-from koordinia.sample import write_sample_dxf
-from koordinia.takedown import compute_takedown
+from baticalc import env
+
+from baticalc.cli import main
+from baticalc.codes import get_code
+from baticalc.costing.bpu import import_bpu
+from baticalc.costing.devis import build_devis, write_excel
+from baticalc.costing.metre import DevisSettings
+from baticalc.design import run
+from baticalc.importers import import_plan
+from baticalc.model import LoadSettings
+from baticalc.recognition import build_model
+from baticalc.sample import write_sample_dxf
+from baticalc.takedown import compute_takedown
 
 ifcopenshell = pytest.importorskip("ifcopenshell")
-import os
 
-REAL_BPU = Path(os.environ.get("KOORDINIA_BPU_REEL", "bordereau_reel_absent.xls"))  # bordereau officiel CI 2012
+REAL_BPU = Path(env("BPU_REEL", "bordereau_reel_absent.xls"))  # bordereau officiel CI 2012
 
 
 @pytest.fixture
@@ -32,7 +33,7 @@ def result(tmp_path):
 def test_ifc_export_valid(result, tmp_path):
     import ifcopenshell.validate
 
-    from koordinia.interop.ifc_export import export_ifc
+    from baticalc.interop.ifc_export import export_ifc
 
     _, res = result
     f = ifcopenshell.open(str(export_ifc(res, tmp_path / "m.ifc")))
@@ -46,12 +47,12 @@ def test_ifc_export_valid(result, tmp_path):
     import ifcopenshell.util.element as ue
 
     psets = ue.get_psets(f.by_type("IfcColumn")[0])
-    assert psets["Koordin_Dimensionnement"]["Armatures"].startswith(("4HA", "6HA", "8HA"))
+    assert psets["BatiCalc_Dimensionnement"]["Armatures"].startswith(("4HA", "6HA", "8HA"))
 
 
 def test_ifc_roundtrip(result, tmp_path):
-    from koordinia.interop.ifc_export import export_ifc
-    from koordinia.interop.ifc_import import import_ifc
+    from baticalc.interop.ifc_export import export_ifc
+    from baticalc.interop.ifc_import import import_ifc
 
     bld, res = result
     proj = import_ifc(export_ifc(res, tmp_path / "m.ifc"))
@@ -65,7 +66,7 @@ def test_ifc_roundtrip(result, tmp_path):
 
 
 def test_ifc_as_input(result, tmp_path):
-    from koordinia.interop.ifc_export import export_ifc
+    from baticalc.interop.ifc_export import export_ifc
 
     _, res = result
     ifc = export_ifc(res, tmp_path / "m.ifc")
@@ -144,7 +145,7 @@ def test_devis_without_bpu(result):
     assert dv.lines and all(ln.pu_ht is None for ln in dv.lines) and dv.total_ht == 0
 
 
-@pytest.mark.skipif(not REAL_BPU.exists(), reason="bordereau réel non fourni (variable KOORDINIA_BPU_REEL)")
+@pytest.mark.skipif(not REAL_BPU.exists(), reason="bordereau réel non fourni (variable BATICALC_BPU_REEL)")
 def test_real_bordereau_ci_2012():
     b = import_bpu(REAL_BPU)
     assert len(b.items) > 800
@@ -156,7 +157,7 @@ def test_real_bordereau_ci_2012():
 def test_cli_and_web_devis(tmp_path):
     from fastapi.testclient import TestClient
 
-    from koordinia.web import create_app
+    from baticalc.web import create_app
 
     bpu = _xlsx_bpu(tmp_path / "bpu.xlsx")
     assert main(["bpu", str(bpu), "-o", str(tmp_path)]) == 0

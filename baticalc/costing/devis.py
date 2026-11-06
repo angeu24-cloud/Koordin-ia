@@ -211,7 +211,7 @@ def write_excel(devis: Devis, path: str | Path) -> Path:
     for n in devis.notes:
         ws.cell(r, 2, n).font = Font(italic=True, color="555555")
         r += 1
-    ws.cell(r, 2, "Document généré par Koordin-IA à partir du calcul : à vérifier par l'économiste / l'ingénieur.").font = \
+    ws.cell(r, 2, "Document généré par BatiCalc à partir du calcul : à vérifier par l'économiste / l'ingénieur.").font = \
         Font(italic=True, color="9A6700")
     for c, wdt in enumerate([8, 70, 8, 14, 16, 20], start=1):
         ws.column_dimensions[get_column_letter(c)].width = wdt

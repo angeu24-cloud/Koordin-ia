@@ -4,12 +4,12 @@ import math
 import ezdxf
 import pytest
 
-from koordinia.importers import import_plan
-from koordinia.mep.design import _dn_pressure, _simultaneity, design_mep, load_params
-from koordinia.mep.drawings import write_mep_drawings
-from koordinia.mep.fixtures import estimate_from_room
-from koordinia.project import Project
-from koordinia.recognition import build_model
+from baticalc.importers import import_plan
+from baticalc.mep.design import _dn_pressure, _simultaneity, design_mep, load_params
+from baticalc.mep.drawings import write_mep_drawings
+from baticalc.mep.fixtures import estimate_from_room
+from baticalc.project import Project
+from baticalc.recognition import build_model
 
 CM = 100.0
 
@@ -132,11 +132,11 @@ def test_column_crosses_repeated_levels(project):
 
 
 def test_mep_in_devis(project):
-    from koordinia.codes import get_code
-    from koordinia.costing.devis import build_devis
-    from koordinia.costing.metre import DevisSettings
-    from koordinia.design import run
-    from koordinia.model import LoadSettings
+    from baticalc.codes import get_code
+    from baticalc.costing.devis import build_devis
+    from baticalc.costing.metre import DevisSettings
+    from baticalc.design import run
+    from baticalc.model import LoadSettings
 
     res = run(project.storeys[0].plan, LoadSettings(), get_code("bael"))
     mep = design_mep(project)

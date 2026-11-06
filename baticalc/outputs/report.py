@@ -73,7 +73,7 @@ def build_html(res: ProjectResult, mep=None) -> str:
     out.append("<h1>Note de calcul — Structure béton armé</h1>")
     if proj.name:
         out.append(f"<h2 style='border:none;margin-top:2pt'>{e(proj.name)}</h2>")
-    out.append(f"<p class='small'>Koordin-IA — {date.today():%d/%m/%Y} — Source : {e(proj.source)}</p>")
+    out.append(f"<p class='small'>BatiCalc — {date.today():%d/%m/%Y} — Source : {e(proj.source)}</p>")
     out.append(
         "<p class='warn'><b>Avertissement :</b> document généré automatiquement à partir d'un modèle "
         "reconnu sur plan. Il constitue une aide au pré-dimensionnement et doit être vérifié, complété "

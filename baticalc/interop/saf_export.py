@@ -60,14 +60,14 @@ def _id() -> str:
 def saf_tables(model: AnalyticalModel, national_code: str = "EC-NF-EN") -> tuple[list, list, dict]:
     """(feuille Project, feuille Model, {feuille: [lignes (dict)]})."""
     now = datetime.now().replace(microsecond=0)
-    project = [("Name", model.name), ("Description", "Modèle analytique exporté par Koordin-IA"),
+    project = [("Name", model.name), ("Description", "Modèle analytique exporté par BatiCalc"),
                ("Project nr", ""), ("Created", now), ("Last update", now), ("Project type", "Building construction"),
                ("Project kind", "New building"), ("Building type", ""), ("Status", "Design"), ("Location", ""),
                ("Id", _id())]
     meta = [("Name", model.name), ("Description", "Ossature béton armé (poteaux, poutres) et charges de plancher"),
             ("Discipline", "Load-bearing structure"), ("Level of detail", "Preliminary design"),
             ("Status", "In progress"), ("Owner", ""), ("Revision number", "1"), ("Created", now), ("Last update", now),
-            ("Source type", "Software"), ("Source application", "Koordin-IA"), ("SAF Version", "2.0.0"),
+            ("Source type", "Software"), ("Source application", "BatiCalc"), ("SAF Version", "2.0.0"),
             ("Source company", ""), ("Global coordinate system", "Z vertical"), ("LCS of cross-section", "ZYX"),
             ("System of units", "Metric"), ("National code", national_code), ("Ignored objects", ""),
             ("Ignored groups", ""), ("Id", _id())]

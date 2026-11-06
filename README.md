@@ -1,4 +1,4 @@
-# Koordin-IA
+# BatiCalc
 
 Dimensionnement de bâtiments en **béton armé** à partir des plans d'architecte
 (**DWG / DXF / PDF**), avec descente de charges, note de calcul et plans d'exécution.
@@ -46,7 +46,7 @@ Plan DWG / DXF / PDF  (dessin unique ou planches multiples)
 | `reseaux.json` | Pré-dimensionnement des réseaux (locaux, circuits, colonnes, TGBT, quantités) |
 | `devis.xlsx` / `devis.json` | Devis quantitatif et estimatif, tous lots |
 | `modele_saf.xlsx` | Modèle de calcul SAF : Graitec Advance Design, SCIA, RFEM… |
-| `robot/` (`robot_koordinia.zip`) | Script qui crée, calcule et enregistre le modèle dans Robot |
+| `robot/` (`robot_baticalc.zip`) | Script qui crée, calcule et enregistre le modèle dans Robot |
 
 ## Installation
 
@@ -58,7 +58,7 @@ pip install -e .
 convertisseurs est installé (sinon, enregistrer le plan en DXF depuis AutoCAD : `ENREGSOUS` → DXF) :
 
 1. **LibreDWG** (libre, testé avec AutoCAD 2018) : outil `dwg2dxf` dans le `PATH`,
-   ou chemin donné par la variable `KOORDINIA_DWG2DXF`. Compilation :
+   ou chemin donné par la variable `BATICALC_DWG2DXF`. Compilation :
    ```bash
    git clone --depth 1 https://github.com/LibreDWG/libredwg && cd libredwg
    git submodule update --init && sh autogen.sh
@@ -70,7 +70,7 @@ convertisseurs est installé (sinon, enregistrer le plan en DXF depuis AutoCAD :
 
 ```bash
 pip install -e .
-koordinia serveur --port 8000 --donnees ./donnees_koordinia
+baticalc serveur --port 8000 --donnees ./donnees_baticalc
 # puis ouvrir http://adresse-du-serveur:8000 depuis un ordinateur ou une tablette
 ```
 
@@ -103,11 +103,11 @@ L'application reprend tout le moteur, sans aucune ligne de commande pour l'utili
   - les niveaux avec leurs altitudes ;
   - les poteaux, les poutres (dont les transferts), les planchers et les semelles, avec leur
     géométrie réelle et le matériau béton armé ;
-  - les résultats de dimensionnement dans le jeu de propriétés `Koordin_Dimensionnement`
+  - les résultats de dimensionnement dans le jeu de propriétés `BatiCalc_Dimensionnement`
     (section, armatures, cadres, Nu, vérification) ;
   - les quantités (`Qto_…BaseQuantities`).
 - **Import** : une maquette IFC exportée de Revit, ArchiCAD, Tekla, Robot ou CYPECAD est
-  acceptée en entrée (`koordinia calculer maquette.ifc`, ou dépôt dans l'application web).
+  acceptée en entrée (`baticalc calculer maquette.ifc`, ou dépôt dans l'application web).
   Le programme lit les niveaux, les poteaux, les poutres (sections), les dalles (contour),
   les murs porteurs et les locaux (IfcSpace → usages et charges).
 
@@ -121,25 +121,25 @@ Chaque calcul produit aussi un **modèle analytique filaire**, prêt à être re
 - appuis articulés sous les poteaux posés sur des murs ; ceux sans appui trouvé sont signalés
   « provisoires » ;
 - cas de charge **PP** (poids propre, calculé par le logiciel), **G** et **Q** (charges de plancher
-  réparties par Koordin-IA sur chaque poutre, zones et balcons compris) ;
+  réparties par BatiCalc sur chaque poutre, zones et balcons compris) ;
 - combinaisons ELU (1,35 G + 1,5 Q) et ELS (G + Q).
 
 - **Graitec Advance Design, SCIA Engineer, Dlubal RFEM / RSTAB, SOFiSTiK** :
   `resultats/modele_saf.xlsx`, au format ouvert **SAF 2.0** (Structural Analysis Format).
   Dans le logiciel : *Importer › SAF*.
 - **Autodesk Robot Structural Analysis**, avec un pilotage direct par l'API officielle RobotOM :
-  - `resultats/robot/` (ou `robot_koordinia.zip` dans l'application web) contient
+  - `resultats/robot/` (ou `robot_baticalc.zip` dans l'application web) contient
     `robot_modele.py`, `robot_modele.json` et `lancer_robot.bat` ;
   - sur un poste Windows où Robot est installé, double-cliquer sur `lancer_robot.bat` (Python 3
     requis ; le script installe `pythonnet`). Le script :
     - ouvre Robot et crée le modèle ;
     - lance le calcul ;
-    - enregistre `modele_koordinia.rtd` ;
+    - enregistre `modele_baticalc.rtd` ;
     - exporte les réactions d'appui dans `robot_reactions.csv` ;
-  - puis comparer les réactions de Robot à la descente de charges de Koordin-IA :
+  - puis comparer les réactions de Robot à la descente de charges de BatiCalc :
 
     ```bash
-    koordinia robot-comparer Projets/Immeuble_X/resultats
+    baticalc robot-comparer Projets/Immeuble_X/resultats
     ```
 
     Le tableau donne, poteau par poteau, l'écart entre les deux. Un écart de plus de 15 % est
@@ -150,9 +150,9 @@ Chaque calcul produit aussi un **modèle analytique filaire**, prêt à être re
 ## Devis quantitatif et estimatif
 
 ```bash
-koordinia bpu BORDEREAU_DE_PRIX.xls -o Projets/Immeuble_X     # → bpu.json
-# koordinia.json : "devis": {"bpu": "bpu.json", "categorie": "2EME", "dosage": 350, "hourdis": null, "tva": 0.18}
-koordinia calculer --config Projets/Immeuble_X/koordinia.json  # → resultats/devis.xlsx
+baticalc bpu BORDEREAU_DE_PRIX.xls -o Projets/Immeuble_X     # → bpu.json
+# baticalc.json : "devis": {"bpu": "bpu.json", "categorie": "2EME", "dosage": 350, "hourdis": null, "tva": 0.18}
+baticalc calculer --config Projets/Immeuble_X/baticalc.json  # → resultats/devis.xlsx
 ```
 
 - **Bordereau** : formats xls, xlsx et csv. La ligne d'en-tête et les colonnes
@@ -168,7 +168,7 @@ koordinia calculer --config Projets/Immeuble_X/koordinia.json  # → resultats/d
   - aciers HA (barres réellement calculées, ratios pour les dalles) ;
   - coffrages par type ; radier ou pieux selon le type de fondation.
 - **Rattachement aux prix** : chaque ouvrage est relié à sa ligne du bordereau par des
-  règles modifiables (`koordinia/data/ouvrages.json`). Un ouvrage sans prix est signalé
+  règles modifiables (`baticalc/data/ouvrages.json`). Un ouvrage sans prix est signalé
   « à saisir ».
 - **Excel** :
   - feuille **DQE** avec de vraies formules (quantité × P.U), sous-totaux par lot, TVA,
@@ -193,7 +193,7 @@ koordinia calculer --config Projets/Immeuble_X/koordinia.json  # → resultats/d
 ## Réseaux : plomberie, électricité, climatisation
 
 Calculés automatiquement à partir des locaux lus sur les plans d'architecte (désactivable
-par `--sans-reseaux`). Paramètres modifiables : `koordinia/data/mep.json`.
+par `--sans-reseaux`). Paramètres modifiables : `baticalc/data/mep.json`.
 
 - **Appareils sanitaires**, dans cet ordre de priorité :
   1. blocs nommés (WC, lavabo, douche, évier, urinoir) ;
@@ -227,25 +227,25 @@ d'études fluides pour l'exécution.
 
 ## Démarrer un nouveau projet
 
-Chaque projet a son dossier et son fichier `koordinia.json`. Ce fichier contient le plan,
+Chaque projet a son dossier et son fichier `baticalc.json`. Ce fichier contient le plan,
 la norme, les matériaux, les charges, la contrainte du sol et le choix des planches. Les
 calculs sont ainsi reproductibles, archivables, et faciles à relancer après une
 modification d'hypothèse.
 
 ```bash
-koordinia init Projets/Immeuble_X --plan plans_archi.dwg --nom "Immeuble X R+4" --norme bael
-#   → Projets/Immeuble_X/koordinia.json   (à compléter : charges, sol…)
+baticalc init Projets/Immeuble_X --plan plans_archi.dwg --nom "Immeuble X R+4" --norme bael
+#   → Projets/Immeuble_X/baticalc.json   (à compléter : charges, sol…)
 #   → Projets/Immeuble_X/plans/plans_archi.dwg
 
-koordinia niveaux  --config Projets/Immeuble_X/koordinia.json   # contrôle niveaux / planches
-koordinia detecter --config Projets/Immeuble_X/koordinia.json   # modèle + plans de contrôle
-koordinia calculer --config Projets/Immeuble_X/koordinia.json   # → Projets/Immeuble_X/resultats/
+baticalc niveaux  --config Projets/Immeuble_X/baticalc.json   # contrôle niveaux / planches
+baticalc detecter --config Projets/Immeuble_X/baticalc.json   # modèle + plans de contrôle
+baticalc calculer --config Projets/Immeuble_X/baticalc.json   # → Projets/Immeuble_X/resultats/
 
 # variante : une option en ligne de commande remplace la configuration
-koordinia calculer --config Projets/Immeuble_X/koordinia.json --norme ec2 -o Projets/Immeuble_X/variante_ec2
+baticalc calculer --config Projets/Immeuble_X/baticalc.json --norme ec2 -o Projets/Immeuble_X/variante_ec2
 ```
 
-Extrait de `koordinia.json` :
+Extrait de `baticalc.json` :
 
 ```json
 {
@@ -264,30 +264,30 @@ traçabilité de chaque calcul.
 
 ```bash
 # 0. Si le DWG contient plusieurs planches (RDC, étages, façades…), les lister
-koordinia planches plans_archi.dwg
+baticalc planches plans_archi.dwg
 
 # 1. Lire la planche de l'étage courant et proposer le modèle (à contrôler)
-koordinia detecter plans_archi.dwg --planche "etage courant" --niveaux 5 --hauteur 3.40 -o projet/
+baticalc detecter plans_archi.dwg --planche "etage courant" --niveaux 5 --hauteur 3.40 -o projet/
 
 #    → ouvrir projet/controle_modele.dxf dans AutoCAD pour vérifier,
 #      corriger si besoin projet/modele.json (sections, poutres…)
 
 # 1 bis. Modéliser TOUS les niveaux (une planche par niveau, hauteurs lues sur les coupes)
-koordinia niveaux plans_archi.dwg                       # niveaux, hauteurs et planches retenues
-koordinia detecter plans_archi.dwg --tous-niveaux -o projet/
-koordinia calculer --modele projet/projet.json --norme bael -o projet/
+baticalc niveaux plans_archi.dwg                       # niveaux, hauteurs et planches retenues
+baticalc detecter plans_archi.dwg --tous-niveaux -o projet/
+baticalc calculer --modele projet/projet.json --norme bael -o projet/
 
 # 2. Calculer (BAEL ou Eurocode 2)
-koordinia calculer --modele projet/modele.json --norme bael --fc 25 --fe 400 --sol 0.2 -o projet/
+baticalc calculer --modele projet/modele.json --norme bael --fc 25 --fe 400 --sol 0.2 -o projet/
 
 # En une seule étape, depuis un PDF au 1/100 :
-koordinia calculer plan.pdf --echelle 100 --niveaux 4 --norme ec2 -o projet/
+baticalc calculer plan.pdf --echelle 100 --niveaux 4 --norme ec2 -o projet/
 
 # Plan d'exemple pour essayer :
-koordinia exemple -o essai/ && koordinia calculer essai/exemple_plan.dxf --niveaux 5 -o essai/res
+baticalc exemple -o essai/ && baticalc calculer essai/exemple_plan.dxf --niveaux 5 -o essai/res
 ```
 
-Principales options de `calculer` (`koordinia calculer -h` pour la liste complète) :
+Principales options de `calculer` (`baticalc calculer -h` pour la liste complète) :
 
 | Option | Défaut | Rôle |
 |---|---|---|
@@ -305,7 +305,7 @@ Principales options de `calculer` (`koordinia calculer -h` pour la liste complè
 | `--calque-poteaux` | détecté | Calque des poteaux (nom ou expression régulière) |
 | `--sans-contour` | — | Ne pas déduire le contour du plancher des murs |
 | `--tous-niveaux` | — | Un modèle par niveau (planches et hauteurs lues dans le dessin) |
-| `--affectation` | auto | Planche par niveau : `"RDC=3,ETAGE 2=4"` (numéros de `koordinia planches`) |
+| `--affectation` | auto | Planche par niveau : `"RDC=3,ETAGE 2=4"` (numéros de `baticalc planches`) |
 | `--hauteurs` | coupes | Hauteurs imposées : `"RDC=3.29"` |
 | `--liste-niveaux` | coupes | Niveaux si les coupes n'en donnent pas : `"RDC,ETAGE 1,ETAGE 2,TERRASSE"` |
 
@@ -371,8 +371,8 @@ Principales options de `calculer` (`koordinia calculer -h` pour la liste complè
 
 Les étiquettes de pièces du plan (« Bureau 40,00 m² », « Balcon », « ASC. », « Local
 technique », « Bâche à eau »…) sont lues et classées grâce au **catalogue d'usages**
-`koordinia/data/usages.json`, établi d'après la NF P06-001. Ce catalogue est modifiable,
-et chaque projet peut le compléter dans `koordinia.json` (clé `usages.regles`).
+`baticalc/data/usages.json`, établi d'après la NF P06-001. Ce catalogue est modifiable,
+et chaque projet peut le compléter dans `baticalc.json` (clé `usages.regles`).
 
 | Type | Exemples | Traitement |
 |---|---|---|
@@ -423,11 +423,11 @@ Chaque escalier détecté sur un plan est calculé avec la hauteur d'étage :
 ## Rapport géotechnique
 
 ```bash
-koordinia geotech rapport_sol.pdf -o Projets/Immeuble_X     # → geotech.json (« valide » : false)
-# contrôler / corriger geotech.json, passer « valide » à true, puis dans koordinia.json :
+baticalc geotech rapport_sol.pdf -o Projets/Immeuble_X     # → geotech.json (« valide » : false)
+# contrôler / corriger geotech.json, passer « valide » à true, puis dans baticalc.json :
 #   "sol": { "geotech": "geotech.json" }
-koordinia calculer --config Projets/Immeuble_X/koordinia.json
-koordinia geotech --vierge -o Projets/Immeuble_X              # rapport scanné : saisie manuelle
+baticalc calculer --config Projets/Immeuble_X/baticalc.json
+baticalc geotech --vierge -o Projets/Immeuble_X              # rapport scanné : saisie manuelle
 ```
 
 - **Données lues** : contrainte admissible ELS et contrainte ELU (bars, kPa, MPa, kg/cm²

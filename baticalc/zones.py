@@ -1,8 +1,8 @@
 """Locaux et usages : lecture des étiquettes de pièces, délimitation des locaux,
 charges par local, trémies, balcons, terrasses et espaces verts sur dalle.
 
-Les règles sont dans un catalogue JSON modifiable (koordinia/data/usages.json),
-complétable par projet (clé « usages » de koordinia.json).
+Les règles sont dans un catalogue JSON modifiable (baticalc/data/usages.json),
+complétable par projet (clé « usages » de baticalc.json).
 """
 from __future__ import annotations
 

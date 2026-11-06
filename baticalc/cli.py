@@ -1,10 +1,10 @@
 """Interface en ligne de commande.
 
 Exemples :
-    koordinia exemple -o essai/
-    koordinia detecter plan.dwg --niveaux 4 -o projet/
-    koordinia calculer plan.pdf --echelle 100 --norme bael --niveaux 4 -o projet/
-    koordinia calculer --modele projet/modele.json --norme ec2 -o projet/
+    baticalc exemple -o essai/
+    baticalc detecter plan.dwg --niveaux 4 -o projet/
+    baticalc calculer plan.pdf --echelle 100 --norme bael --niveaux 4 -o projet/
+    baticalc calculer --modele projet/modele.json --norme ec2 -o projet/
 """
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def _add_import_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--hauteur", type=float, default=3.0, help="Hauteur d'étage (m)")
     p.add_argument("--portee-max", type=float, default=8.0, help="Portée maximale d'une poutre (m)")
     p.add_argument("--planche", help="Planche à traiter si le dessin en contient plusieurs : numéro ou mots du "
-                                     "titre (ex. « etage courant »). Voir « koordinia planches ».")
+                                     "titre (ex. « etage courant »). Voir « baticalc planches ».")
     p.add_argument("--calque-poteaux", help="Calque des poteaux (nom exact ou expression régulière)")
     p.add_argument("--sans-contour", action="store_true",
                    help="Ne pas déduire le contour du plancher des murs (mailles de la trame uniquement)")
@@ -39,13 +39,13 @@ def _add_import_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--sans-locaux", action="store_true",
                    help="Ne pas lire les locaux (usages, trémies, balcons) : charges uniformes")
     p.set_defaults(usages=None)
-    p.add_argument("--config", help="Fichier de configuration du projet (koordinia.json, voir « koordinia init »)")
+    p.add_argument("--config", help="Fichier de configuration du projet (baticalc.json, voir « baticalc init »)")
     p.add_argument("-o", "--sortie", default="resultats", help="Dossier de sortie")
 
 
 # ----------------------------------------------------------------------------- configuration projet
 CONFIG_TEMPLATE = {
-    "_aide": ("Configuration Koordin-IA d'un projet. Les chemins sont relatifs à ce fichier. "
+    "_aide": ("Configuration BatiCalc d'un projet. Les chemins sont relatifs à ce fichier. "
               "Une option donnée en ligne de commande remplace la valeur d'ici. null = automatique."),
     "projet": {
         "nom": "Nom du projet",
@@ -79,17 +79,17 @@ CONFIG_TEMPLATE = {
         "facade": 0.0,
         "degression": True,
     },
-    "sol": {"_aide": ("geotech : geotech.json produit par « koordinia geotech rapport.pdf » (à valider) ; "
+    "sol": {"_aide": ("geotech : geotech.json produit par « baticalc geotech rapport.pdf » (à valider) ; "
                       "sol : contrainte admissible ELS imposée (MPa), prioritaire sur le rapport ; 0,20 si rien"),
             "geotech": None, "sol": None},
     "devis": {
-        "_aide": ("bpu : bordereau de prix importé (koordinia bpu BORDEREAU.xls) ; categorie : 1ERE à 4EME "
+        "_aide": ("bpu : bordereau de prix importé (baticalc bpu BORDEREAU.xls) ; categorie : 1ERE à 4EME "
                   "(terrain des fouilles) ; dosage : béton de fondation (kg/m³) ; hourdis : « 16 + 4 », « 20 + 5 »… "
                   "(vide = déduit du poids du plancher) ; tva : 0.18"),
         "bpu": None, "categorie": "2EME", "dosage": 350, "hourdis": None, "tva": 0.18,
     },
     "usages": {
-        "_aide": ("Règles d'usage propres au projet, prioritaires sur le catalogue koordinia/data/usages.json. "
+        "_aide": ("Règles d'usage propres au projet, prioritaires sur le catalogue baticalc/data/usages.json. "
                   "Exemple : {\"nom\": \"Salle serveurs\", \"motifs\": [\"SERVEUR\"], \"q\": 7.5, \"type\": \"local\"}"),
         "regles": [],
     },
@@ -176,14 +176,14 @@ def cmd_geotech(args) -> int:
         print("•", r)
     print(f"\nValeurs enregistrées dans {path} avec « valide » : false.")
     print("Contrôlez-les (et corrigez-les si besoin) puis passez « valide » à true ;")
-    print(f"ensuite : koordinia calculer … --geotech {path}   (ou « sol » → « geotech » dans koordinia.json)")
+    print(f"ensuite : baticalc calculer … --geotech {path}   (ou « sol » → « geotech » dans baticalc.json)")
     return 0
 
 
 def cmd_init(args) -> int:
     folder = Path(args.dossier)
     folder.mkdir(parents=True, exist_ok=True)
-    cfg_path = folder / "koordinia.json"
+    cfg_path = folder / "baticalc.json"
     if cfg_path.exists() and not args.force:
         print(f"{cfg_path} existe déjà (utilisez --force pour le remplacer).", file=sys.stderr)
         return 1
@@ -207,8 +207,8 @@ def cmd_init(args) -> int:
     print(f"  - configuration : {cfg_path}  (charges, sol, norme, planches… à compléter)")
     if args.plan:
         print(f"  - plan copié    : {folder / 'plans' / Path(args.plan).name}")
-    print(f"Ensuite : koordinia niveaux --config {cfg_path}")
-    print(f"          koordinia calculer --config {cfg_path}")
+    print(f"Ensuite : baticalc niveaux --config {cfg_path}")
+    print(f"          baticalc calculer --config {cfg_path}")
     return 0
 
 
@@ -307,10 +307,10 @@ def cmd_robot_comparer(args) -> int:
     summary = json.loads((out / "resultats.json").read_text(encoding="utf-8"))
     csv_path = Path(args.csv) if args.csv else out / "robot" / "robot_reactions.csv"
     rows = compare_reactions(summary.get("charges_pied_poteaux_kN", {}), csv_path)
-    print(f"{'Poteau':<8}{'Robot G':>10}{'Robot Q':>10}{'Koordin G':>11}{'Koordin Q':>11}{'Écart':>9}")
+    print(f"{'Poteau':<8}{'Robot G':>10}{'Robot Q':>10}{'BatiCalc G':>11}{'BatiCalc Q':>11}{'Écart':>9}")
     for r in rows:
-        kg = f"{r['koordin_G']:>11.1f}" if r["koordin_G"] is not None else f"{'—':>11}"
-        kq = f"{r['koordin_Q']:>11.1f}" if r["koordin_Q"] is not None else f"{'—':>11}"
+        kg = f"{r['baticalc_G']:>11.1f}" if r["baticalc_G"] is not None else f"{'—':>11}"
+        kq = f"{r['baticalc_Q']:>11.1f}" if r["baticalc_Q"] is not None else f"{'—':>11}"
         ec = f"{r['ecart_pct']:>8.1f}%" if r["ecart_pct"] is not None else f"{'—':>9}"
         print(f"{r['poteau']:<8}{r['robot_G']:>10.1f}{r['robot_Q']:>10.1f}{kg}{kq}{ec}")
     (out / "robot" / "comparaison_robot.json").write_text(json.dumps(rows, ensure_ascii=False, indent=1),
@@ -364,7 +364,7 @@ def cmd_bpu(args) -> int:
     for n in b.notes:
         print("•", n)
     print(f"Bordereau enregistré : {path}")
-    print("Dans koordinia.json : \"devis\": {\"bpu\": \"bpu.json\"}  (ou calculer … --bpu bpu.json)")
+    print("Dans baticalc.json : \"devis\": {\"bpu\": \"bpu.json\"}  (ou calculer … --bpu bpu.json)")
     return 0
 
 
@@ -428,7 +428,7 @@ def cmd_detecter(args) -> int:
         print(f"\nProjet enregistré : {out / 'projet.json'}")
         for f in files:
             print("Plan de contrôle :", f)
-        print(f"Ensuite : koordinia calculer --modele {out / 'projet.json'} --norme bael -o {out}")
+        print(f"Ensuite : baticalc calculer --modele {out / 'projet.json'} --norme bael -o {out}")
         return 0
     bld, drawing = _import_model(args)
     bld.save(out / "modele.json")
@@ -437,7 +437,7 @@ def cmd_detecter(args) -> int:
         print("•", w)
     print(f"\nModèle enregistré : {out / 'modele.json'}  (modifiable : sections, poutres, niveaux…)")
     print(f"Plan de contrôle : {out / 'controle_modele.dxf'}  (rouge = modèle reconnu, gris = plan importé)")
-    print(f"Ensuite : koordinia calculer --modele {out / 'modele.json'} --norme bael -o {out}")
+    print(f"Ensuite : baticalc calculer --modele {out / 'modele.json'} --norme bael -o {out}")
     return 0
 
 
@@ -627,8 +627,11 @@ def cmd_serveur(args) -> int:
 
     from .web import create_app
 
-    app = create_app(args.donnees)
-    print(f"Koordin-IA : http://{args.hote}:{args.port}  (données : {Path(args.donnees).resolve()})")
+    from . import data_dir
+
+    donnees = data_dir(args.donnees)
+    app = create_app(donnees)
+    print(f"BatiCalc : http://{args.hote}:{args.port}  (données : {Path(donnees).resolve()})")
     uvicorn.run(app, host=args.hote, port=args.port, log_level="warning")
     return 0
 
@@ -644,7 +647,7 @@ def cmd_exemple(args) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(prog="koordinia", description="Dimensionnement BA à partir de plans DWG/DXF/PDF")
+    p = argparse.ArgumentParser(prog="baticalc", description="Dimensionnement BA à partir de plans DWG/DXF/PDF")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     d = sub.add_parser("detecter", help="Lire un plan et proposer le modèle structurel (à vérifier)")
@@ -704,11 +707,11 @@ def main(argv: list[str] | None = None) -> int:
     sv = sub.add_parser("serveur", help="Lancer l'application web (équipe, navigateur, tablette)")
     sv.add_argument("--port", type=int, default=8000)
     sv.add_argument("--hote", default="0.0.0.0", help="Adresse d'écoute (0.0.0.0 = accessible sur le réseau)")
-    sv.add_argument("--donnees", default="donnees_koordinia", help="Dossier des comptes, projets et fichiers")
+    sv.add_argument("--donnees", default="donnees_baticalc", help="Dossier des comptes, projets et fichiers")
     sv.set_defaults(func=cmd_serveur)
 
     rc = sub.add_parser("robot-comparer", help="Comparer les réactions calculées par Robot à la descente de charges")
-    rc.add_argument("resultats", help="Dossier des résultats Koordin-IA (contient resultats.json et robot/)")
+    rc.add_argument("resultats", help="Dossier des résultats BatiCalc (contient resultats.json et robot/)")
     rc.add_argument("--csv", help="Fichier robot_reactions.csv (par défaut : <resultats>/robot/robot_reactions.csv)")
     rc.set_defaults(func=cmd_robot_comparer)
 
@@ -727,7 +730,7 @@ def main(argv: list[str] | None = None) -> int:
             apply_config(args, sp.choices[args.cmd], raw)
         if args.cmd in ("detecter", "calculer", "planches", "niveaux") and not args.plan \
                 and not getattr(args, "modele", None):
-            raise ValueError("Indiquez un plan (.dwg/.dxf/.pdf), --modele, ou --config koordinia.json")
+            raise ValueError("Indiquez un plan (.dwg/.dxf/.pdf), --modele, ou --config baticalc.json")
         return args.func(args)
     except (NotImplementedError, ValueError, RuntimeError) as exc:
         print(f"Erreur : {exc}", file=sys.stderr)

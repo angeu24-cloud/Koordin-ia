@@ -5,10 +5,10 @@ Produit, dans le dossier des résultats :
   sections béton, appuis, cas PP / G / Q, combinaisons ELU / ELS), lance le calcul,
   enregistre le projet `.rtd` et exporte les réactions d'appui (`robot_reactions.csv`) ;
 - `robot/lancer_robot.bat` : installe pythonnet si besoin et lance le script (Windows) ;
-- `robot/robot_modele.json` : le modèle analytique (repères Koordin-IA des nœuds et barres).
+- `robot/robot_modele.json` : le modèle analytique (repères BatiCalc des nœuds et barres).
 
-Ensuite `koordinia robot-comparer` compare les réactions de Robot à la descente de charges
-de Koordin-IA, poteau par poteau.
+Ensuite `baticalc robot-comparer` compare les réactions de Robot à la descente de charges
+de BatiCalc, poteau par poteau.
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from ..design import ProjectResult
 from .analytical import AnalyticalModel, build_analytical
 
 SCRIPT = r'''# -*- coding: utf-8 -*-
-"""Modèle Koordin-IA → Autodesk Robot Structural Analysis (API RobotOM).
+"""Modèle BatiCalc → Autodesk Robot Structural Analysis (API RobotOM).
 
 Utilisation (Windows, Robot installé) :  py -m pip install pythonnet  puis  py robot_modele.py
 Variable d'environnement facultative ROBOT_DLL : chemin de Interop.RobotOM.dll.
@@ -160,7 +160,7 @@ with open(out, "w", newline="", encoding="utf-8") as f:
         for cname, (k, _) in cases.items():
             r = st.Results.Nodes.Reactions.Value(num[n], k)
             w.writerow([n, ref, cname, round(r.FZ / KN, 2)])
-app.Project.SaveAs(os.path.join(HERE, "modele_koordinia.rtd"))
+app.Project.SaveAs(os.path.join(HERE, "modele_baticalc.rtd"))
 print("Terminé :", out)
 '''
 
@@ -188,7 +188,7 @@ def export_robot(res: ProjectResult, folder: str | Path, model: AnalyticalModel 
     # archive à télécharger (application web) : les trois fichiers à décompresser dans un même dossier
     import zipfile
 
-    zp = folder.parent / "robot_koordinia.zip"
+    zp = folder.parent / "robot_baticalc.zip"
     with zipfile.ZipFile(zp, "w", zipfile.ZIP_DEFLATED) as z:
         for f in (py, bat, js):
             z.write(f, f.name)
@@ -206,7 +206,7 @@ def base_loads(res: ProjectResult) -> dict[str, dict[str, float]]:
 
 
 def compare_reactions(base: dict[str, dict[str, float]], csv_path: str | Path) -> list[dict]:
-    """Réactions de Robot (PP + G, Q) / charges en pied de poteau de Koordin-IA (même découpage)."""
+    """Réactions de Robot (PP + G, Q) / charges en pied de poteau de BatiCalc (même découpage)."""
     robot: dict[str, dict[str, float]] = {}
     with open(csv_path, encoding="utf-8") as f:
         for row in csv.DictReader(f, delimiter=";"):
@@ -219,6 +219,6 @@ def compare_reactions(base: dict[str, dict[str, float]], csv_path: str | Path) -
         k = base.get(ref)
         tot = (k["G"] + k["Q"]) if k else 0.0
         out.append({"poteau": ref, "robot_G": round(r_g, 1), "robot_Q": round(r_q, 1),
-                    "koordin_G": k["G"] if k else None, "koordin_Q": k["Q"] if k else None,
+                    "baticalc_G": k["G"] if k else None, "baticalc_Q": k["Q"] if k else None,
                     "ecart_pct": round(((r_g + r_q) / tot - 1) * 100, 1) if tot else None})
     return out

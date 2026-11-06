@@ -3,15 +3,15 @@ poteau naissant (poutre de transfert), poteau sur mur, équilibre global."""
 import ezdxf
 import pytest
 
-from koordinia.cli import main
-from koordinia.codes import get_code
-from koordinia.design import run
-from koordinia.importers import import_plan
-from koordinia.levels import canonical_level, read_elevations, sheet_levels
-from koordinia.model import LoadSettings
-from koordinia.project import Project, build_project
-from koordinia.sheets import find_sheets
-from koordinia.takedown import CONCRETE, compute_takedown
+from baticalc.cli import main
+from baticalc.codes import get_code
+from baticalc.design import run
+from baticalc.importers import import_plan
+from baticalc.levels import canonical_level, read_elevations, sheet_levels
+from baticalc.model import LoadSettings
+from baticalc.project import Project, build_project
+from baticalc.sheets import find_sheets
+from baticalc.takedown import CONCRETE, compute_takedown
 
 CM = 100.0
 
@@ -142,13 +142,13 @@ def test_transfer_and_wall_support(proj_dxf):
 
 def test_single_plan_project_matches_building(tmp_path):
     """Un projet fait du même plan répété donne la même descente que le mode plan unique."""
-    from koordinia.recognition import build_model
-    from koordinia.sample import write_sample_dxf
+    from baticalc.recognition import build_model
+    from baticalc.sample import write_sample_dxf
 
     bld = build_model(import_plan(write_sample_dxf(tmp_path / "p.dxf")), n_levels=4, floor_height=3.0)
     ls = LoadSettings()
     td1 = compute_takedown(bld, ls)
-    proj = Project([__import__("koordinia.project", fromlist=["Storey"]).Storey(f"N{k}", 3.0, bld)
+    proj = Project([__import__("baticalc.project", fromlist=["Storey"]).Storey(f"N{k}", 3.0, bld)
                     for k in range(4)])
     td2 = compute_takedown(proj, ls)
     for cid, stacks in td1.columns.items():

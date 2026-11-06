@@ -4,14 +4,14 @@ import json
 import pymupdf
 import pytest
 
-from koordinia.cli import main
-from koordinia.codes import get_code
-from koordinia.design import run
-from koordinia.geotech import GeotechData, Value, extract
-from koordinia.importers import import_plan
-from koordinia.model import LoadSettings
-from koordinia.recognition import build_model
-from koordinia.sample import write_sample_dxf
+from baticalc.cli import main
+from baticalc.codes import get_code
+from baticalc.design import run
+from baticalc.geotech import GeotechData, Value, extract
+from baticalc.importers import import_plan
+from baticalc.model import LoadSettings
+from baticalc.recognition import build_model
+from baticalc.sample import write_sample_dxf
 
 RAPPORT_SEMELLES = """RAPPORT D'ETUDE GEOTECHNIQUE - MISSION G2 AVP
 Trois sondages penetrometriques ont ete realises jusqu'a 12 m de profondeur.

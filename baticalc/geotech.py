@@ -109,7 +109,7 @@ def read_text(path: str | Path) -> list[tuple[int, str]]:
         pages = [(i + 1, p.get_text()) for i, p in enumerate(doc)]
         if sum(len(t.strip()) for _, t in pages) < 40:
             raise ValueError("Ce PDF ne contient pas de texte (rapport scanné) : la lecture automatique n'est pas "
-                             "possible. Créez un geotech.json vierge (koordinia geotech --vierge) et saisissez "
+                             "possible. Créez un geotech.json vierge (baticalc geotech --vierge) et saisissez "
                              "les valeurs du rapport.")
         return pages
     if suffix in (".txt", ".md"):

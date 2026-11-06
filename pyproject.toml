@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "koordinia"
+name = "baticalc"
 version = "0.1.0"
 description = "Dimensionnement de bâtiments en béton armé (BAEL 91 / Eurocode 2) à partir de plans DWG, DXF et PDF"
 readme = "README.md"
@@ -24,13 +24,14 @@ dependencies = [
 dev = ["pytest>=7", "httpx>=0.27"]
 
 [project.scripts]
-koordinia = "koordinia.cli:main"
+baticalc = "baticalc.cli:main"
+koordinia = "baticalc.cli:main"   # ancien nom, conservé
 
 [tool.setuptools.package-data]
-koordinia = ["data/*.json", "web/static/*", "web/static/vendor/three/*", "web/static/vendor/three/controls/*"]
+baticalc = ["data/*.json", "web/static/*", "web/static/vendor/three/*", "web/static/vendor/three/controls/*"]
 
 [tool.setuptools.packages.find]
-include = ["koordinia*"]
+include = ["baticalc*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

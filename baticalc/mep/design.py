@@ -1,5 +1,5 @@
 """Pré-dimensionnement des réseaux : plomberie (DTU 60.11), électricité (NF C 15-100),
-climatisation (bilan simplifié en climat tropical). Paramètres : koordinia/data/mep.json."""
+climatisation (bilan simplifié en climat tropical). Paramètres : baticalc/data/mep.json."""
 from __future__ import annotations
 
 import json

@@ -1,6 +1,6 @@
-"""Application web Koordin-IA : API (FastAPI) + interface (fichiers statiques).
+"""Application web BatiCalc : API (FastAPI) + interface (fichiers statiques).
 
-Lancement : koordinia serveur --port 8000 --donnees ./donnees
+Lancement : baticalc serveur --port 8000 --donnees ./donnees
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from .storage import ROLES, Storage
 
 STATIC = Path(__file__).parent / "static"
-COOKIE = "koordinia_session"
+COOKIE = "baticalc_session"
 MAX_UPLOAD = 200 * 1024 * 1024
 PLAN_EXT = {".dwg", ".dxf", ".pdf", ".ifc"}
 REPORT_EXT = {".pdf", ".txt", ".docx"}
@@ -36,11 +36,13 @@ def _safe_filename(name: str) -> str:
 
 
 def create_app(data_dir: str | Path | None = None, sync_jobs: bool | None = None) -> FastAPI:
-    store = Storage(data_dir or os.environ.get("KOORDINIA_DATA", "donnees_koordinia"))
-    sync = sync_jobs if sync_jobs is not None else os.environ.get("KOORDINIA_SYNC_JOBS") == "1"
+    from .. import data_dir as _data_dir, env
+
+    store = Storage(data_dir or _data_dir(env("DATA", "donnees_baticalc")))
+    sync = sync_jobs if sync_jobs is not None else env("SYNC_JOBS") == "1"
     pool = ThreadPoolExecutor(max_workers=1)
     run_lock = threading.Lock()
-    app = FastAPI(title="Koordin-IA", version="0.2")
+    app = FastAPI(title="BatiCalc", version="0.2")
     app.state.store = store
 
     # ------------------------------------------------------------------ dépendances
@@ -61,7 +63,11 @@ def create_app(data_dir: str | Path | None = None, sync_jobs: bool | None = None
         return p
 
     def cfg_path(pid: int) -> Path:
-        return store.project_dir(pid) / "koordinia.json"
+        path = store.project_dir(pid) / "baticalc.json"
+        old = path.with_name("koordinia.json")   # projet créé sous l'ancien nom
+        if not path.exists() and old.exists():
+            old.rename(path)
+        return path
 
     def read_cfg(pid: int) -> dict:
         from ..cli import CONFIG_TEMPLATE

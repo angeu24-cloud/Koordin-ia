@@ -5,7 +5,7 @@ Graitec Advance / Arche, BIMcollab, etc. Contenu :
 - projet / site / bâtiment / niveaux (altitudes) ;
 - poteaux (IfcColumn), poutres et poutres de transfert (IfcBeam), planchers (IfcSlab),
   semelles (IfcFooting), avec géométrie extrudée et matériau béton ;
-- résultats de dimensionnement dans un jeu de propriétés « Koordin_Dimensionnement »
+- résultats de dimensionnement dans un jeu de propriétés « BatiCalc_Dimensionnement »
   (section, armatures, cadres, effort, vérification) et quantités (volumes, longueurs).
 """
 from __future__ import annotations
@@ -40,12 +40,12 @@ class _Writer:
             f.createIfcSIUnit(None, "FORCEUNIT", "KILO", "NEWTON"),
         ])
         app = f.createIfcApplication(
-            f.createIfcOrganization(None, "Koordin-IA", None, None, None), "0.3", "Koordin-IA", "Koordin-IA")
-        person = f.createIfcPerson(None, None, "Koordin-IA", None, None, None, None, None)
-        org = f.createIfcOrganization(None, "Koordin-IA", None, None, None)
+            f.createIfcOrganization(None, "BatiCalc", None, None, None), "0.3", "BatiCalc", "BatiCalc")
+        person = f.createIfcPerson(None, None, "BatiCalc", None, None, None, None, None)
+        org = f.createIfcOrganization(None, "BatiCalc", None, None, None)
         self.owner = f.createIfcOwnerHistory(f.createIfcPersonAndOrganization(person, org, None), app, None,
                                              "ADDED", None, None, None, int(time.time()))
-        self.project = f.createIfcProject(self.guid(), self.owner, name or "Projet Koordin-IA", None, None, None,
+        self.project = f.createIfcProject(self.guid(), self.owner, name or "Projet BatiCalc", None, None, None,
                                           None, [ctx], units)
         self.material = f.createIfcMaterial("Béton armé", None, "Concrete")
 
@@ -141,7 +141,7 @@ def export_ifc(res: ProjectResult, path: str | Path) -> Path:
                                    w.placement(st_pl, c["x"], c["y"], 0),
                                    w.shape([w.rect_solid(c["b"], c["h"], H)]), c["id"], "COLUMN")
             w.props(el, "Pset_ColumnCommon", {"Reference": c["id"], "LoadBearing": True})
-            w.props(el, "Koordin_Dimensionnement", {
+            w.props(el, "BatiCalc_Dimensionnement", {
                 "Section": f"{c['b'] * 100:.0f}x{c['h'] * 100:.0f} cm", "Armatures": c["armatures"],
                 "Cadres": c["cadres"], "Nu_kN": c["nu"], "Verifie": c["ok"], "Reglement": code})
             w.quantities(el, "Qto_ColumnBaseQuantities", {"Length": ("L", H), "NetVolume": ("V", c["b"] * c["h"] * H)})
@@ -156,7 +156,7 @@ def export_ifc(res: ProjectResult, path: str | Path) -> Path:
             el = f.createIfcBeam(w.guid(), w.owner, b["id"], None, kind, pl,
                                  w.shape([w.rect_solid(b["b"], b["h"], L)]), b["id"], "BEAM")
             w.props(el, "Pset_BeamCommon", {"Reference": b["id"], "LoadBearing": True, "Span": L})
-            w.props(el, "Koordin_Dimensionnement", {
+            w.props(el, "BatiCalc_Dimensionnement", {
                 "Section": f"{b['b'] * 100:.0f}x{b['h'] * 100:.0f} cm", "Aciers_inferieurs": b["inf"],
                 "Aciers_superieurs": b["sup"], "Cadres": b["cadres"], "Transfert": bool(b.get("transfert")),
                 "Creee_automatiquement": bool(b.get("auto")), "Verifie": b["ok"], "Reglement": code})
@@ -180,7 +180,7 @@ def export_ifc(res: ProjectResult, path: str | Path) -> Path:
                 el = f.createIfcFooting(w.guid(), w.owner, f"S-{ft['id']}", None, "Semelle isolée",
                                         w.placement(st_pl, ft["x"], ft["y"], -ft["h"]),
                                         w.shape([w.rect_solid(ft["A"], ft["B"], ft["h"])]), ft["id"], "PAD_FOOTING")
-                w.props(el, "Koordin_Dimensionnement", {"Dimensions": f"{ft['A'] * 100:.0f}x{ft['B'] * 100:.0f}x"
+                w.props(el, "BatiCalc_Dimensionnement", {"Dimensions": f"{ft['A'] * 100:.0f}x{ft['B'] * 100:.0f}x"
                                                         f"{ft['h'] * 100:.0f} cm", "Sous_mur": ft["sous_mur"],
                                                         "Contrainte_sol_MPa": res.sigma_sol, "Verifie": ft["ok"]})
                 w.quantities(el, "Qto_FootingBaseQuantities", {"NetVolume": ("V", ft["A"] * ft["B"] * ft["h"])})

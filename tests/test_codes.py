@@ -2,10 +2,10 @@ import math
 
 import pytest
 
-from koordinia.codes import get_code
-from koordinia.codes.bael import BAEL
-from koordinia.codes.common import bar_area, choose_bars
-from koordinia.codes.ec2 import EC2
+from baticalc.codes import get_code
+from baticalc.codes.bael import BAEL
+from baticalc.codes.common import bar_area, choose_bars
+from baticalc.codes.ec2 import EC2
 
 
 def test_bael_column_hand_calculation():

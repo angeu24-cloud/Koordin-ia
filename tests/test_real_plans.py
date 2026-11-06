@@ -5,15 +5,15 @@ import shutil
 import ezdxf
 import pytest
 
-from koordinia.cli import main
-from koordinia.codes import get_code
-from koordinia.design import run
-from koordinia.importers import import_plan
-from koordinia.importers.dxf_importer import find_dwg2dxf
-from koordinia.model import Building, LoadSettings
-from koordinia.recognition import build_model
-from koordinia.sheets import crop, find_sheets, select_sheet
-from koordinia.takedown import compute_takedown
+from baticalc.cli import main
+from baticalc.codes import get_code
+from baticalc.design import run
+from baticalc.importers import import_plan
+from baticalc.importers.dxf_importer import find_dwg2dxf
+from baticalc.model import Building, LoadSettings
+from baticalc.recognition import build_model
+from baticalc.sheets import crop, find_sheets, select_sheet
+from baticalc.takedown import compute_takedown
 
 CM = 100.0  # dessin en centimètres
 

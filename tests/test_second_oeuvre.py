@@ -2,14 +2,14 @@
 import ezdxf
 import pytest
 
-from koordinia.codes import get_code
-from koordinia.costing.archi import _wall_classes, archi_metre
-from koordinia.costing.metre import DevisSettings
-from koordinia.design import run
-from koordinia.importers import import_plan
-from koordinia.model import LoadSettings
-from koordinia.recognition import build_model
-from koordinia.slab import SlabMask
+from baticalc.codes import get_code
+from baticalc.costing.archi import _wall_classes, archi_metre
+from baticalc.costing.metre import DevisSettings
+from baticalc.design import run
+from baticalc.importers import import_plan
+from baticalc.model import LoadSettings
+from baticalc.recognition import build_model
+from baticalc.slab import SlabMask
 
 K = 100.0
 

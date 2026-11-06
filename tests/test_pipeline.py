@@ -3,16 +3,16 @@ import json
 import pymupdf
 import pytest
 
-from koordinia.cli import main
-from koordinia.codes import get_code
-from koordinia.design import run
-from koordinia.geometry import rect_from_points
-from koordinia.importers import import_plan
-from koordinia.importers.pdf_importer import PdfImportError, detect_scale
-from koordinia.model import Building, LoadSettings
-from koordinia.recognition import build_model
-from koordinia.sample import write_sample_dxf, write_sample_pdf
-from koordinia.takedown import compute_takedown, degression_coef
+from baticalc.cli import main
+from baticalc.codes import get_code
+from baticalc.design import run
+from baticalc.geometry import rect_from_points
+from baticalc.importers import import_plan
+from baticalc.importers.pdf_importer import PdfImportError, detect_scale
+from baticalc.model import Building, LoadSettings
+from baticalc.recognition import build_model
+from baticalc.sample import write_sample_dxf, write_sample_pdf
+from baticalc.takedown import compute_takedown, degression_coef
 
 
 def test_rect_from_points():

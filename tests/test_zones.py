@@ -3,14 +3,14 @@ import ezdxf
 import numpy as np
 import pytest
 
-from koordinia.codes import get_code
-from koordinia.design import balcony_design, run
-from koordinia.importers import import_plan
-from koordinia.model import LoadSettings
-from koordinia.recognition import build_model
-from koordinia.slab import SlabMask
-from koordinia.takedown import CONCRETE, compute_takedown, slab_mask
-from koordinia.zones import cell_loads, classify, load_catalogue, read_labels, zone_objects
+from baticalc.codes import get_code
+from baticalc.design import balcony_design, run
+from baticalc.importers import import_plan
+from baticalc.model import LoadSettings
+from baticalc.recognition import build_model
+from baticalc.slab import SlabMask
+from baticalc.takedown import CONCRETE, compute_takedown, slab_mask
+from baticalc.zones import cell_loads, classify, load_catalogue, read_labels, zone_objects
 
 CM = 100.0
 
