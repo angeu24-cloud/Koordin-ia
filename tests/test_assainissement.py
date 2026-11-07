@@ -35,3 +35,18 @@ def test_infiltration_by_soil():
 def test_grease_trap():
     assert bac_graisses(distance_fosse_m=38)["necessaire"] is True
     assert bac_graisses(distance_fosse_m=6)["necessaire"] is False
+
+
+def test_evacuation_network():
+    from baticalc.mep.evacuation import Troncon, capacite, dimensionner, profil, q_ww, regard
+
+    assert q_ww(["lavabo"]) == 0.5
+    assert q_ww(["wc", "lavabo", "douche", "evier"]) == 2.0           # débit du WC gouverne
+    assert q_ww(["wc"] * 10) == pytest.approx(0.5 * math.sqrt(20), abs=1e-3)
+    assert capacite(110, 0.02) > capacite(110, 0.01)
+    t = dimensionner(Troncon("T1", "R1", "R2", 8.0, 0.02, ["evier", "wc"]))
+    assert t.dn == 110 and 0 < t.h_d <= 0.5 and t.v > 0
+    ts = [Troncon("a", "R1", "R2", 10, 0.02), Troncon("b", "R2", "R3", 5, 0.01)]
+    fe = profil(ts, -0.40)
+    assert fe["R2"] == pytest.approx(-0.60) and fe["R3"] == pytest.approx(-0.65)
+    assert regard(0.5) == "40 × 40" and regard(1.5) == "80 × 80"
