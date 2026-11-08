@@ -346,8 +346,26 @@ Principales options de `calculer` (`baticalc calculer -h` pour la liste complèt
 
 ## Ossature proposée et toiture légère (villas, plans sans poteaux)
 
-Quand le plan d'architecte ne dessine pas la structure (cas courant des villas), BatiCalc propose
-l'ossature à partir des axes des murs :
+Quand le plan d'architecte ne dessine pas la structure (cas courant des villas et duplex), BatiCalc
+propose l'ossature à partir des murs, automatiquement dès qu'une planche ne contient pas de poteaux
+(ou sur demande : `--proposer-poteaux`, configuration `lecture.proposer_poteaux`, case à cocher de
+l'onglet « Plan & niveaux ») :
+
+1. **Murs porteurs** : traits doubles ou rectangles de 12 à 45 cm (les cloisons minces sont écartées
+   si le plan a des murs plus épais), tronçons d'un même mur raccordés de part et d'autre des baies,
+   murs hors du plancher ignorés ; le bâtiment principal est isolé des cartouches et légendes.
+2. **Poteaux** aux angles, croisements et extrémités de murs, puis poteaux intermédiaires si la portée
+   dépasse l'écartement maximal (`--ecartement-poteaux`, 4,5 m par défaut), calés sur les **axes de
+   l'architecte** (traits mixtes) ou les files existantes, et **jamais dans une baie**.
+3. **Poutres de rive** sur les bords du plancher sans mur, puis **recoupement des grands planchers** :
+   toute zone dont la portée de dalle dépasse écartement + 1 m reçoit une file de poutres, sans poteau
+   au milieu des pièces (sauf portée > 7,5 m).
+4. **Plusieurs niveaux** : planches calées sur les nœuds des murs ; du haut vers le bas, chaque poteau
+   de l'étage descend s'il tombe sur un mur du niveau inférieur ; des poutres sont placées sous les murs
+   de l'étage ; les autres poteaux sont **naissants** (poutre de transfert dimensionnée et signalée).
+
+Le résultat se corrige dans l'onglet **Structure** de l'application web (voir ci-dessous) avant le
+calcul. La même fonction est accessible en Python à partir d'axes de murs relevés :
 
 ```python
 from baticalc.ossature import structure_from_walls
@@ -365,6 +383,24 @@ bld = structure_from_walls(murs, max_span=4.5, col=(0.20, 0.20), beam=(0.20, 0.3
 - **Longrines** : `charges.longrines` = poids de la maçonnerie du rez-de-chaussée (kN/m). Les
   longrines (20×35 par défaut) sont dimensionnées sous tous les murs, et leurs réactions sont
   ajoutées aux semelles.
+
+## Éditeur de structure (onglet « Structure »)
+
+Avant le calcul, l'ingénieur voit, niveau par niveau, les murs du plan, le contour, les poteaux et
+les poutres proposés, ainsi que les poteaux du niveau inférieur (pointillés) et les poteaux naissants
+(rouge). Outils :
+
+- **Sélection** : glisser un poteau pour le déplacer (accroché aux axes des murs, aux files et aux
+  poteaux du niveau inférieur) ; toucher un élément pour modifier sa section ou sa position, ou
+  l'appliquer à tout le niveau ;
+- **+ Poteau** : un poteau posé sur une poutre la coupe en deux ; **+ Poutre** : toucher deux poteaux ;
+- **Supprimer** : un poteau retiré emporte ses poutres et les poutres alignées sont raccordées ;
+- **Annuler** (Ctrl+Z), **Copier niveau inférieur**, **Reproposer la structure**, **Enregistrer**,
+  **Revenir à la proposition automatique**, **Enregistrer et calculer**.
+
+La structure enregistrée (`modele_edite.json`) remplace la lecture des plans pour les calculs suivants ;
+un nouveau plan l'annule. Les nouveaux poteaux placés au droit d'un poteau d'un niveau voisin en prennent
+le repère. API : `GET/PUT/DELETE /api/projets/{id}/structure`, `POST /api/projets/{id}/structure/proposer`.
 
 ## Plusieurs fichiers de plans
 

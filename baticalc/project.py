@@ -145,7 +145,11 @@ def build_project(
     default_height: float = 3.0,
     rooms: bool = True,
     usages: list[dict] | None = None,
+    propose: bool | None = None,
+    column_span: float = 4.5,
 ) -> Project:
+    """Projet multi-niveaux. `propose` : ossature proposée d'après les murs (None = si les planches
+    ne dessinent pas de poteaux)."""
     storeys, sheets, notes = plan_storeys(drawing, overrides=overrides, heights=heights,
                                           default_height=default_height, levels_spec=levels_spec)
     proj = Project(source=drawing.source, warnings=list(drawing.warnings) + notes)
@@ -161,6 +165,20 @@ def build_project(
     ref_sheet = storeys[-1].sheet
     sub_of(ref_sheet)
     ref_c = centers[ref_sheet.index]
+    if propose is None:
+        propose = len(ref_c) < 4 or any(len(centers[sp.sheet.index]) < 4 for sp in storeys if sub_of(sp.sheet))
+    if propose:
+        # sans poteaux dessinés : calage sur les nœuds des murs (angles, croisements) de chaque planche
+        for sp in storeys:
+            sh = sp.sheet
+            pre = build_model(sub_of(sh), propose=True, rooms=False, footprint=footprint, max_span=max_span,
+                              column_span=column_span)
+            o = pre.origin or [0.0, 0.0]
+            centers[sh.index] = np.array([[c.x + o[0], c.y + o[1]] for c in pre.columns]) \
+                if pre.columns else np.zeros((0, 2))
+        ref_c = centers[ref_sheet.index]
+        proj.warnings.append("Planches sans poteaux dessinés : ossature proposée d'après les murs, "
+                             "poteaux superposés d'un niveau à l'autre — à valider dans l'onglet « Structure ».")
     if len(ref_c) == 0:
         raise ValueError(f"Aucun poteau sur la planche « {ref_sheet.title} ».")
     o_ref = (float(ref_c[:, 0].min()), float(ref_c[:, 1].min()))
@@ -181,10 +199,17 @@ def build_project(
                 proj.warnings.append(f"Calage peu fiable pour « {sh.title} » : vérifier le plan de contrôle.")
         models[sh.index] = build_model(sub, origin=(o_ref[0] + t[0], o_ref[1] + t[1]),
                                        column_layer=column_layer, max_span=max_span, footprint=footprint,
-                                       rooms=rooms, usages=usages)
+                                       rooms=rooms, usages=usages, propose=propose, column_span=column_span)
+    frames: dict[int, tuple] = {}
+    if propose:
+        frames, notes2 = _vertical_continuity(storeys, models)
+        proj.warnings += notes2
+
+    def cols_of(k: int, sp) -> list:
+        return frames[k][0] if k in frames else models[sp.sheet.index].columns
 
     # Identifiants globaux : poteaux superposés = même repère P…
-    pts = [(c.x, c.y) for sp in storeys for c in models[sp.sheet.index].columns]
+    pts = [(c.x, c.y) for k, sp in enumerate(storeys) for c in cols_of(k, sp)]
     gx = cluster([p[0] for p in pts], 0.30)
     gy = cluster([p[1] for p in pts], 0.30)
     keys: dict[tuple[int, int], list[tuple[float, float]]] = {}
@@ -220,7 +245,18 @@ def build_project(
                 )
         plan.warnings = [w for w in base.warnings if not w.startswith("Portée")]
         mask = SlabMask.from_dict(plan.slab) if plan.slab else None
-        build_frame(plan, mask, max_span=max_span)
+        if k in frames:
+            plan.columns, plan.beams = copy.deepcopy(frames[k])
+            ids = {c.id: global_id(c.x, c.y) for c in plan.columns}
+            for c in plan.columns:
+                c.id = ids[c.id]
+            for n, b in enumerate(plan.beams, start=1):
+                b.start, b.end, b.id = ids[b.start], ids[b.end], f"B{n}"
+            plan.beams = [b for b in plan.beams if b.start != b.end]
+            plan.grid_x = sorted({round(c.x, 2) for c in plan.columns})
+            plan.grid_y = sorted({round(c.y, 2) for c in plan.columns})
+        else:
+            build_frame(plan, mask, max_span=max_span)
         plan.axis_x, plan.axis_y = _labels_for(plan, base)
         if mask is not None and base.slab:
             own = SlabMask.from_dict(base.slab)
@@ -232,6 +268,74 @@ def build_project(
                 )
         proj.storeys.append(Storey(display_name(sp.name), sp.height, plan, sh_title(sp)))
     return proj
+
+
+def _on_walls(x: float, y: float, walls, tol: float = 0.30) -> bool:
+    for w in walls:
+        x0, y0, x1, y1 = w[:4]
+        if abs(x1 - x0) >= abs(y1 - y0):
+            if abs(y - (y0 + y1) / 2) <= tol and min(x0, x1) - tol <= x <= max(x0, x1) + tol:
+                return True
+        elif abs(x - (x0 + x1) / 2) <= tol and min(y0, y1) - tol <= y <= max(y0, y1) + tol:
+            return True
+    return False
+
+
+def _crossings(walls_a, walls_b, tol: float = 0.30) -> list[tuple[float, float]]:
+    """Croisements (et jonctions en T ou en L) entre deux familles d'axes de murs orthogonaux."""
+    out = []
+    for a in walls_a:
+        for b in walls_b:
+            ha = abs(a[2] - a[0]) >= abs(a[3] - a[1])
+            hb = abs(b[2] - b[0]) >= abs(b[3] - b[1])
+            if ha == hb:
+                continue
+            h, v = (a, b) if ha else (b, a)
+            x, y = (v[0] + v[2]) / 2, (h[1] + h[3]) / 2
+            if min(h[0], h[2]) - tol <= x <= max(h[0], h[2]) + tol and min(v[1], v[3]) - tol <= y <= max(v[1], v[3]) + tol:
+                out.append((x, y))
+    return out
+
+
+def _vertical_continuity(storeys, models) -> tuple[dict[int, tuple], list[str]]:
+    """Ossatures proposées, du dernier niveau vers le bas : chaque poteau de l'étage supérieur descend
+    s'il tombe sur un mur (ou près d'un poteau) de l'étage inférieur ; poutres sous les murs de l'étage
+    supérieur ; les autres poteaux sont naissants (portés par une poutre)."""
+    import math
+
+    from .recognition import _apply_proposal
+
+    frames: dict[int, tuple] = {}
+    notes: list[str] = []
+    n = len(storeys)
+    for k in range(n - 1, -1, -1):
+        m = copy.deepcopy(models[storeys[k].sheet.index])
+        if not getattr(m, "_prop", None) or k == n - 1:
+            frames[k] = (m.columns, m.beams)
+            continue
+        up_cols = frames[k + 1][0]
+        upper = models[storeys[k + 1].sheet.index]
+        walls_k = m._prop["walls"]
+        up_walls = [w[:4] for w in (getattr(upper, "_prop", None) or {}).get("walls", upper.walls)]
+        extra = [(c.x, c.y) for c in up_cols
+                 if _on_walls(c.x, c.y, walls_k) or any(math.hypot(d.x - c.x, d.y - c.y) <= 0.6 for d in m.columns)]
+        extra += _crossings(up_walls, walls_k)
+        carried = SlabMask.from_dict(upper.slab) if upper.slab else None
+        _apply_proposal(m, extra_columns=extra, carried=carried, upper_walls=up_walls)
+        pairs = sorted(((math.hypot(u.x - c.x, u.y - c.y), i, j) for i, c in enumerate(m.columns)
+                        for j, u in enumerate(up_cols) if abs(u.x - c.x) <= 0.6 and abs(u.y - c.y) <= 0.6))
+        done_c, done_u = set(), set()
+        for d, i, j in pairs:    # alignement exact sur le poteau du dessus (un pour un)
+            if d <= 0.6 and i not in done_c and j not in done_u:
+                m.columns[i].x, m.columns[i].y = up_cols[j].x, up_cols[j].y
+                done_c.add(i)
+                done_u.add(j)
+        born = [c for c in up_cols if not any(math.hypot(d.x - c.x, d.y - c.y) < 0.05 for d in m.columns)]
+        if born:
+            notes.append(f"{display_name(storeys[k + 1].name)} : {len(born)} poteau(x) naissant(s) sans mur dessous "
+                         f"(portés par une poutre de {display_name(storeys[k].name)}) — à vérifier.")
+        frames[k] = (m.columns, m.beams)
+    return frames, notes
 
 
 def resolve_candidates(storeys: list[StoreyPlan], sheets: list[Sheet], sub_of, centers) -> list[str]:

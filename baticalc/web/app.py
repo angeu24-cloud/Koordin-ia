@@ -8,7 +8,6 @@ import contextlib
 import io
 import hmac
 import json
-import os
 import re
 import threading
 import traceback
@@ -179,6 +178,26 @@ def create_app(data_dir: str | Path | None = None, sync_jobs: bool | None = None
         write_cfg(pid, cfg)
         print(f"Plan analysé : {len(sheets)} planche(s), {len(out['niveaux'])} niveau(x).")
 
+    def propose_structure(pid: int) -> None:
+        """Modèle automatique (lecture des plans + ossature) sans calcul, pour l'éditeur."""
+        from ..cli import main
+
+        out = store.project_dir(pid) / "structure_auto"
+        rc = main(["detecter", "--config", str(cfg_path(pid)), "-o", str(out)])
+        if rc != 0:
+            raise RuntimeError("la lecture des plans a échoué (voir le journal)")
+
+    def _structure_source(pid: int):
+        from ..project import Project
+
+        d = store.project_dir(pid)
+        for path, src in ((d / "modele_edite.json", "edite"), (d / "structure_auto" / "projet.json", "auto"),
+                          (d / "structure_auto" / "modele.json", "auto"), (d / "resultats" / "projet.json", "auto"),
+                          (d / "resultats" / "modele.json", "auto")):
+            if path.exists():
+                return Project.load(path), src
+        return None, None
+
     def calcul(pid: int) -> None:
         from ..cli import main
 
@@ -338,7 +357,13 @@ def create_app(data_dir: str | Path | None = None, sync_jobs: bool | None = None
         return path
 
     def _set_plans(pid: int, user: dict, rel: list[str], what: str):
+        import shutil
+
+        d = store.project_dir(pid)      # nouveaux plans : la structure proposée ou modifiée est périmée
+        (d / "modele_edite.json").unlink(missing_ok=True)
+        shutil.rmtree(d / "structure_auto", ignore_errors=True)
         cfg = read_cfg(pid)
+        cfg["projet"].pop("modele", None)
         cfg["projet"]["plan"] = (rel[0] if len(rel) == 1 else rel) if rel else None
         lec = cfg.setdefault("lecture", {})
         lec["planche"] = None
@@ -374,6 +399,57 @@ def create_app(data_dir: str | Path | None = None, sync_jobs: bool | None = None
         (store.project_dir(pid) / "plans" / _safe_filename(name)).unlink(missing_ok=True)
         return _set_plans(pid, user, rel, f"Plan retiré : {name}")
 
+    # ------------------------------------------------------------------ édition de la structure
+    @app.get("/api/projets/{pid}/structure")
+    def get_structure(pid: int, user: dict = Depends(current_user)):
+        from .structure import to_edit
+
+        project_access(pid, user)
+        proj, src = _structure_source(pid)
+        if proj is None:
+            raise HTTPException(404, "Pas encore de modèle : cliquez sur « Proposer la structure ».")
+        return to_edit(proj, src)
+
+    @app.post("/api/projets/{pid}/structure/proposer")
+    def post_propose(pid: int, user: dict = Depends(current_user)):
+        project_access(pid, user, "editeur")
+        if not _plan_list(read_cfg(pid)):
+            raise HTTPException(400, "Importez d'abord le plan.")
+        jid = submit(pid, "structure", user["id"], lambda: propose_structure(pid))
+        return {"tache": jid}
+
+    @app.put("/api/projets/{pid}/structure")
+    def put_structure(pid: int, body: dict, user: dict = Depends(current_user)):
+        from .structure import apply_edits, to_edit
+
+        project_access(pid, user, "editeur")
+        proj, _src = _structure_source(pid)
+        if proj is None:
+            raise HTTPException(404, "Pas de modèle à modifier.")
+        try:
+            notes = apply_edits(proj, body)
+        except (ValueError, KeyError, TypeError) as exc:
+            raise HTTPException(400, f"Structure non valide : {exc}") from exc
+        d = store.project_dir(pid)
+        proj.save(d / "modele_edite.json")
+        cfg = read_cfg(pid)
+        cfg["projet"]["modele"] = "modele_edite.json"
+        write_cfg(pid, cfg)
+        n_c = sum(len(st.plan.columns) for st in (proj.storeys[:1] if proj.single_plan else proj.storeys))
+        store.log(pid, user["id"], f"Structure modifiée ({n_c} poteaux)")
+        return {"notes": notes, **to_edit(proj, "edite")}
+
+    @app.delete("/api/projets/{pid}/structure")
+    def reset_structure(pid: int, user: dict = Depends(current_user)):
+        project_access(pid, user, "editeur")
+        d = store.project_dir(pid)
+        (d / "modele_edite.json").unlink(missing_ok=True)
+        cfg = read_cfg(pid)
+        cfg["projet"].pop("modele", None)
+        write_cfg(pid, cfg)
+        store.log(pid, user["id"], "Retour à la structure proposée automatiquement")
+        return {"ok": True}
+
     @app.post("/api/projets/{pid}/analyse")
     def reanalyse(pid: int, user: dict = Depends(current_user)):
         project_access(pid, user, "editeur")
@@ -385,6 +461,11 @@ def create_app(data_dir: str | Path | None = None, sync_jobs: bool | None = None
     def put_config(pid: int, body: dict, user: dict = Depends(current_user)):
         project_access(pid, user, "editeur")
         cfg = read_cfg(pid)
+        if isinstance(body.get("lecture"), dict) and any(cfg.get("lecture", {}).get(k) != v
+                                                          for k, v in body["lecture"].items()):
+            import shutil   # lecture modifiée : la proposition automatique est à refaire
+
+            shutil.rmtree(store.project_dir(pid) / "structure_auto", ignore_errors=True)
         for section in ("lecture", "reglement", "charges", "sol", "usages", "projet", "devis"):
             if isinstance(body.get(section), dict):
                 cur = cfg.setdefault(section, {})

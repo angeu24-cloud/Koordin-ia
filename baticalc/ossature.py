@@ -19,11 +19,20 @@ from .slab import SlabMask
 def structure_from_walls(walls: list[tuple[float, float, float, float]], *, max_span: float = 4.5,
                          merge: float = 0.45, col: tuple[float, float] = (0.20, 0.20),
                          beam: tuple[float, float] = (0.20, 0.30), footprint: list[tuple] | None = None,
-                         res: float = 0.10, extra_columns: list[tuple[float, float]] = ()) -> Building:
+                         res: float = 0.10, extra_columns: list[tuple[float, float]] = (),
+                         avoid: list[tuple[float, float, float, float]] = (),
+                         axes: tuple[list[float], list[float]] = ([], []), long_span: float = 7.5) -> Building:
     """`walls` : axes orthogonaux (x0, y0, x1, y1) en m ; `footprint` : rectangles (x0, y0, x1, y1)
-    couverts par le plancher ou la toiture (sinon enveloppe des murs)."""
+    couverts par le plancher ou la toiture (sinon enveloppe des murs) ; `avoid` : baies (segments sur
+    les axes des murs) où l'on ne place pas de poteau intermédiaire ; `axes` : files du plan (x, y) sur
+    lesquelles on cale de préférence les poteaux intermédiaires.
+
+    Un mur donné avec un 5e terme "v" est virtuel (poutre sans mur dessous : plancher à recouper, mur de
+    l'étage supérieur) : pas de poteau à ses extrémités libres ni de poteau intermédiaire sous `long_span`
+    (on ne place pas de poteau au milieu d'une pièce)."""
     W = []
-    for x0, y0, x1, y1 in walls:
+    virt = [len(w) > 4 and w[4] == "v" for w in walls]
+    for x0, y0, x1, y1, *_ in walls:
         if abs(x1 - x0) >= abs(y1 - y0):
             W.append(("H", min(x0, x1), max(x0, x1), (y0 + y1) / 2))
         else:
@@ -41,11 +50,12 @@ def structure_from_walls(walls: list[tuple[float, float, float, float]], *, max_
         W = [(k, a, b, snap[c]) if k == kind else (k, a, b, c) for k, a, b, c in W]
     # 1) nœuds : extrémités et intersections
     pts: list[tuple[float, float]] = list(extra_columns)
-    for k, a, b, c in W:
-        pts += [(a, c), (b, c)] if k == "H" else [(c, a), (c, b)]
+    for (k, a, b, c), v in zip(W, virt):
+        if not v:
+            pts += [(a, c), (b, c)] if k == "H" else [(c, a), (c, b)]
     for i, (ka, a0, a1, ac) in enumerate(W):
-        for kb, b0, b1, bc in W[i + 1:]:
-            if ka == kb:
+        for j, (kb, b0, b1, bc) in enumerate(W[i + 1:], start=i + 1):
+            if ka == kb or (virt[i] and virt[j]):
                 continue
             h, v = ((a0, a1, ac), (b0, b1, bc)) if ka == "H" else ((b0, b1, bc), (a0, a1, ac))
             x, y = v[2], h[2]
@@ -76,19 +86,24 @@ def structure_from_walls(walls: list[tuple[float, float, float, float]], *, max_
             (abs(n[0] - c) <= merge and a - merge <= n[1] <= b + merge)
 
     # 3) poteaux intermédiaires sur les longues portées, alignés si possible sur les files existantes
-    for w in W:
+    for w, v in zip(W, virt):
         k = w[0]
         along = sorted(((n[0] if k == "H" else n[1]), i) for i, n in enumerate(nodes) if on_wall(n, w))
         files = sorted({round(n[0] if k == "H" else n[1], 3) for n in nodes})
+        ax = sorted(axes[0] if k == "H" else axes[1])
         for (pa, _), (pb, _) in zip(along, along[1:]):
             cur = pa
+            if v and pb - pa <= long_span:
+                continue
             while pb - cur > max_span:
-                cands = [f for f in files if cur + 1.0 <= f <= min(cur + max_span, pb - 1.0)]
+                cands = [f for f in ax if cur + 1.0 <= f <= min(cur + max_span, pb - 1.0)] or \
+                    [f for f in files if cur + 1.0 <= f <= min(cur + max_span, pb - 1.0)]
                 if cands:
                     t = max(cands)
                 else:
                     m = math.ceil((pb - cur) / max_span)
                     t = cur + (pb - cur) / m
+                t = _off_openings(t, w, avoid, lo=cur + 1.0, hi=min(cur + max_span, pb - 1.0))
                 nodes.append([t, w[3]] if k == "H" else [w[3], t])
                 cur = t
     # 4) poteaux et poutres
@@ -124,4 +139,196 @@ def structure_from_walls(walls: list[tuple[float, float, float, float]], *, max_
     bld.warnings.append(f"Ossature proposée d'après les murs : {len(columns)} poteaux {col[0] * 100:.0f}×{col[1] * 100:.0f}, "
                         f"{len(beams)} chaînages {beam[0] * 100:.0f}×{beam[1] * 100:.0f}, portée maximale {max_span:g} m "
                         "— à valider par l'ingénieur.")
+    return bld
+
+
+def _off_openings(t: float, w, avoid, *, lo: float, hi: float, margin: float = 0.15) -> float:
+    """Décale une position `t` le long du mur `w` hors des baies (vers le bord le plus proche admissible)."""
+    k, _, _, c = w
+    for x0, y0, x1, y1 in avoid:
+        horiz = abs(x1 - x0) >= abs(y1 - y0)
+        if horiz != (k == "H") or abs((y0 if horiz else x0) - c) > 0.35:
+            continue
+        a, b = (min(x0, x1), max(x0, x1)) if horiz else (min(y0, y1), max(y0, y1))
+        if a - margin < t < b + margin:
+            opts = [v for v in (a - margin, b + margin) if lo <= v <= hi]
+            if opts:
+                return min(opts, key=lambda v: abs(v - t))
+    return t
+
+
+def beams_on_walls(columns: list[Column], walls, *, merge: float = 0.40, beam: tuple[float, float] = (0.20, 0.40),
+                   start: int = 1) -> list[Beam]:
+    """Poutres le long des murs (axes x0, y0, x1, y1…) entre poteaux consécutifs situés sur le mur."""
+    out: list[Beam] = []
+    seen = set()
+    for w in walls:
+        x0, y0, x1, y1 = w[:4]
+        horiz = abs(x1 - x0) >= abs(y1 - y0)
+        c = (y0 + y1) / 2 if horiz else (x0 + x1) / 2
+        a, b = (min(x0, x1), max(x0, x1)) if horiz else (min(y0, y1), max(y0, y1))
+        on = sorted(((col.x if horiz else col.y), col.id) for col in columns
+                    if abs((col.y if horiz else col.x) - c) <= merge and a - merge <= (col.x if horiz else col.y) <= b + merge)
+        for (pa, ia), (pb, ib) in zip(on, on[1:]):
+            key = tuple(sorted((ia, ib)))
+            if key in seen or pb - pa < 0.3:
+                continue
+            seen.add(key)
+            out.append(Beam(f"B{start + len(out)}", ia, ib, beam[0], beam[1], "X" if horiz else "Y"))
+    return out
+
+
+# ---------------------------------------------------------------------------- plancher sans appui
+def _raster_beams(bld: Building, mask: SlabMask) -> np.ndarray:
+    ny, nx = mask.mask.shape
+    out = np.zeros((ny, nx), dtype=bool)
+    cols = bld.column_map()
+    for b in bld.beams:
+        c1, c2 = cols[b.start], cols[b.end]
+        n = int(max(abs(c2.x - c1.x), abs(c2.y - c1.y)) / mask.res * 2) + 2
+        for t in np.linspace(0.0, 1.0, n):
+            i = int((c1.y + t * (c2.y - c1.y) - mask.y0) / mask.res)
+            j = int((c1.x + t * (c2.x - c1.x) - mask.x0) / mask.res)
+            if 0 <= i < ny and 0 <= j < nx:
+                out[i, j] = True
+    return out
+
+
+def _ray_dist(sup: np.ndarray, inside: np.ndarray, res: float, cantilever: float) -> np.ndarray:
+    """Distance (m) au plus proche appui vers les indices décroissants de chaque ligne ; 0 si le bord du
+    plancher est à moins de `cantilever` (porte-à-faux admis), +inf sinon."""
+    ny, nx = sup.shape
+    idx = np.broadcast_to(np.arange(nx), (ny, nx))
+    last_sup = np.maximum.accumulate(np.where(sup, idx, -1), axis=1)
+    last_edge = np.maximum.accumulate(np.where(~inside, idx, -1), axis=1)
+    d = np.where(last_sup >= 0, (idx - last_sup) * res, np.inf)
+    edge_first = last_edge > last_sup
+    de = (idx - last_edge) * res
+    d = np.where(edge_first, np.where(de <= cantilever, 0.0, np.inf), d)
+    return d
+
+
+def unsupported(bld: Building, mask: SlabMask, *, slab_span: float = 5.5, cantilever: float = 1.5) -> np.ndarray:
+    """Cellules du plancher dont la petite portée entre poutres dépasse `slab_span`."""
+    sup = _raster_beams(bld, mask)
+    m = mask.mask
+    dl = _ray_dist(sup, m, mask.res, cantilever)
+    dr = _ray_dist(sup[:, ::-1], m[:, ::-1], mask.res, cantilever)[:, ::-1]
+    dd = _ray_dist(sup.T, m.T, mask.res, cantilever).T
+    du = _ray_dist(sup.T[:, ::-1], m.T[:, ::-1], mask.res, cantilever)[:, ::-1].T
+    span = np.minimum(dl + dr, dd + du)
+    return m & ~sup & (span > slab_span)
+
+
+def _largest_region(a: np.ndarray) -> tuple[int, int, int, int, int] | None:
+    """Plus grande composante connexe (4-voisinage) : (n, i0, j0, i1, j1)."""
+    from collections import deque
+
+    seen = np.zeros_like(a)
+    best = None
+    for i0, j0 in zip(*np.nonzero(a)):
+        if seen[i0, j0]:
+            continue
+        q = deque([(i0, j0)])
+        seen[i0, j0] = True
+        n, bi0, bj0, bi1, bj1 = 0, i0, j0, i0, j0
+        while q:
+            i, j = q.popleft()
+            n += 1
+            bi0, bj0, bi1, bj1 = min(bi0, i), min(bj0, j), max(bi1, i), max(bj1, j)
+            for u, v in ((i + 1, j), (i - 1, j), (i, j + 1), (i, j - 1)):
+                if 0 <= u < a.shape[0] and 0 <= v < a.shape[1] and a[u, v] and not seen[u, v]:
+                    seen[u, v] = True
+                    q.append((u, v))
+        if best is None or n > best[0]:
+            best = (n, bi0, bj0, bi1, bj1)
+    return best
+
+
+def perimeter_walls(mask: SlabMask, walls, *, min_len: float = 1.0, near: float = 0.45) -> list[tuple]:
+    """Rives du plancher (contour orthogonal) non doublées par un mur : poutres de rive."""
+    from .slab import outline_segments
+
+    out = []
+    for x0, y0, x1, y1 in outline_segments(mask):
+        horiz = abs(x1 - x0) >= abs(y1 - y0)
+        L = abs(x1 - x0) + abs(y1 - y0)
+        if L < min_len:
+            continue
+        a, b = (min(x0, x1), max(x0, x1)) if horiz else (min(y0, y1), max(y0, y1))
+        c = y0 if horiz else x0
+        covered = 0.0
+        for w in walls:
+            wh = abs(w[2] - w[0]) >= abs(w[3] - w[1])
+            if wh != horiz:
+                continue
+            wc = (w[1] + w[3]) / 2 if wh else (w[0] + w[2]) / 2
+            if abs(wc - c) > near:
+                continue
+            wa, wb = (min(w[0], w[2]), max(w[0], w[2])) if wh else (min(w[1], w[3]), max(w[1], w[3]))
+            covered += max(0.0, min(b, wb) - max(a, wa))
+        if covered < 0.5 * L:
+            out.append((x0, y0, x1, y1))
+    return out
+
+
+def structure_on_slab(walls: list[tuple], mask: SlabMask, *, perimeter: SlabMask | None = None,
+                      max_span: float = 4.5, slab_span: float = 5.5, max_iter: int = 15,
+                      virtual_walls: list[tuple] = (), **kw) -> Building:
+    """Ossature d'après les murs, complétée pour que tout le plancher soit porté :
+    poutres de rive sur les bords sans mur, puis files de poutres et poteaux ajoutées au milieu
+    des zones dont la portée de dalle dépasse `slab_span` (calées sur les files existantes)."""
+    walls = [tuple(w[:4]) for w in walls]
+    n_real = len(walls)
+    extra = perimeter_walls(perimeter or mask, walls)
+    walls = walls + extra + [(*w[:4], "v") for w in virtual_walls]
+    added = len(extra)
+    fp = kw.pop("footprint", None)
+    bld = structure_from_walls(walls, max_span=max_span, footprint=fp, **kw)
+    for _ in range(max_iter):
+        un = unsupported(bld, mask, slab_span=slab_span)
+        reg = _largest_region(un)
+        if reg is None or reg[0] * mask.res ** 2 < 1.0:
+            break
+        _, i0, j0, i1, j1 = reg
+        x0, x1 = mask.x0 + j0 * mask.res, mask.x0 + (j1 + 1) * mask.res
+        y0, y1 = mask.y0 + i0 * mask.res, mask.y0 + (i1 + 1) * mask.res
+        files_x = sorted({c.x for c in bld.columns})
+        files_y = sorted({c.y for c in bld.columns})
+        vertical = (x1 - x0) >= (y1 - y0)       # on recoupe la plus grande dimension
+        lo, hi = (x0, x1) if vertical else (y0, y1)
+        mid = (lo + hi) / 2
+        inner = lambda fs: [f for f in fs if lo + (hi - lo) / 4 <= f <= hi - (hi - lo) / 4]  # noqa: E731
+        axes = kw.get("axes", ([], []))
+        cands = inner(axes[0] if vertical else axes[1]) or inner(files_x if vertical else files_y)
+        pos = min(cands, key=lambda f: abs(f - mid)) if cands else round(mid, 2)
+        # prolongement de la file jusqu'aux poutres (ou au bord) de part et d'autre de la zone
+        sup = _raster_beams(bld, mask)
+        ny, nx = mask.mask.shape
+        if vertical:
+            j = min(nx - 1, max(0, int((pos - mask.x0) / mask.res)))
+            col_m, col_s = mask.mask[:, j], sup[:, j]
+            a, b = i0, i1
+        else:
+            i = min(ny - 1, max(0, int((pos - mask.y0) / mask.res)))
+            col_m, col_s = mask.mask[i, :], sup[i, :]
+            a, b = j0, j1
+        while a > 0 and col_m[a - 1] and not col_s[a]:
+            a -= 1
+        while b < len(col_m) - 1 and col_m[b + 1] and not col_s[b]:
+            b += 1
+        if vertical:
+            seg = (pos, mask.y0 + a * mask.res, pos, mask.y0 + (b + 1) * mask.res)
+        else:
+            seg = (mask.x0 + a * mask.res, pos, mask.x0 + (b + 1) * mask.res, pos)
+        if abs(seg[2] - seg[0]) + abs(seg[3] - seg[1]) < 1.0:
+            break
+        walls.append((*seg, "v"))
+        added += 1
+        bld = structure_from_walls(walls, max_span=max_span, footprint=fp, **kw)
+    bld.slab = mask.to_dict()
+    bld.walls = bld.walls[:n_real]
+    if added:
+        bld.warnings.append(f"{added} file(s) de poutres ajoutée(s) sans mur dessous (rives et plancher de "
+                            f"portée > {slab_span:g} m) : à valider.")
     return bld

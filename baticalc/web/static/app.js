@@ -1,6 +1,6 @@
 // BatiCalc — interface web (sans étape de compilation)
 const $app = document.getElementById("app");
-const state = { user: null, project: null, tab: "plan", model: null, storey: 0, view: "2d", poll: null };
+const state = { user: null, project: null, tab: "plan", model: null, storey: 0, view: "2d", poll: null, editor: null };
 
 // ------------------------------------------------------------------ outils
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -120,7 +120,7 @@ async function viewProjects() {
 }
 
 // ------------------------------------------------------------------ projet
-const TABS = [["plan", "Plan & niveaux"], ["hypotheses", "Hypothèses"], ["geotech", "Géotechnique"],
+const TABS = [["plan", "Plan & niveaux"], ["structure", "Structure"], ["hypotheses", "Hypothèses"], ["geotech", "Géotechnique"],
   ["calcul", "Calcul"], ["modele", "Modèle 2D / 3D"], ["devis", "Devis"], ["fichiers", "Plans & note"], ["equipe", "Équipe"]];
 
 async function loadProject(pid) { state.project = await api(`/api/projets/${pid}`); return state.project; }
@@ -140,9 +140,13 @@ async function viewProject(pid, tab) {
       `<button role="tab" aria-selected="${k === tab}" data-tab="${k}">${l}</button>`).join("")}</nav>
     <div id="pane"></div>
   </section>`;
-  document.querySelectorAll(".tabs button").forEach((b) => (b.onclick = () => go(`#/projet/${pid}/${b.dataset.tab}`)));
+  document.querySelectorAll(".tabs button").forEach((b) => (b.onclick = () => {
+    if (state.editor && state.editor.dirty && !confirm("Modifications de la structure non enregistrées : quitter quand même ?")) return;
+    state.editor = null;
+    go(`#/projet/${pid}/${b.dataset.tab}`);
+  }));
   const pane = document.getElementById("pane");
-  ({ plan: paneplan, hypotheses: panehyp, geotech: panegeo, calcul: panecalc, modele: panemodel,
+  ({ plan: paneplan, hypotheses: panehyp, geotech: panegeo, calcul: panecalc, modele: panemodel, structure: panestructure,
      fichiers: panefiles, equipe: paneteam, devis: panedevis }[tab] || paneplan)(pane, p);
   const job = p.tache;
   if (job && (job.status === "en_attente" || job.status === "en_cours")) watchJob(job.id);
@@ -150,7 +154,7 @@ async function viewProject(pid, tab) {
 
 function jobBanner(job) {
   if (!job) return "";
-  const lbl = { analyse: "Analyse du plan", calcul: "Calcul" }[job.kind] || job.kind;
+  const lbl = { analyse: "Analyse du plan", calcul: "Calcul", structure: "Proposition de structure" }[job.kind] || job.kind;
   if (job.status === "en_attente" || job.status === "en_cours")
     return `<p><span class="spinner"></span> ${lbl} en cours…</p>`;
   if (job.status === "erreur") return `<p class="badge ko">${lbl} : échec</p><details><summary>Détails</summary><div class="log">${esc(job.error)}\n${esc(job.log)}</div></details>`;
@@ -210,7 +214,10 @@ function paneplan(el, p) {
     <div class="row">
       <div><label>Calque des poteaux (vide = automatique)</label><input id="calque" value="${esc(lec.calque_poteaux || "")}" ${canEdit() ? "" : "disabled"}></div>
       <div><label>Échelle d'un PDF (ex. 100)</label><input id="ech" type="number" value="${lec.echelle || ""}" ${canEdit() ? "" : "disabled"}></div>
+      <div><label>Écartement maximal des poteaux proposés (m)</label><input id="ecart" type="number" step="0.1" min="2.5" max="8" value="${lec.ecartement_poteaux || 4.5}" ${canEdit() ? "" : "disabled"}></div>
     </div>
+    <label class="inline"><input type="checkbox" id="propo" ${lec.proposer_poteaux ? "checked" : ""} ${canEdit() ? "" : "disabled"}>
+      Proposer les poteaux d'après les murs (ignorer ceux lus sur le plan ; automatique si le plan n'en dessine pas)</label>
     ${a.notes.length ? `<details><summary class="small">Remarques de lecture (${a.notes.length})</summary><ul class="small warnings">${a.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></details>` : ""}
     ${canEdit() ? `<div class="actions"><button id="save">Enregistrer</button><button class="ghost" id="calc">Enregistrer et calculer</button></div>` : ""}
   </section>` : ""}`;
@@ -239,7 +246,9 @@ function paneplan(el, p) {
     }));
   }
   const save = async (thenCalc) => {
-    const lecture = { calque_poteaux: calque.value.trim() || null, echelle: ech.value ? Number(ech.value) : null };
+    const lecture = { calque_poteaux: calque.value.trim() || null, echelle: ech.value ? Number(ech.value) : null,
+      proposer_poteaux: document.getElementById("propo").checked || null,
+      ecartement_poteaux: Number(document.getElementById("ecart").value) || 4.5 };
     if (a && a.ifc) {
       // rien à régler : la maquette IFC porte ses niveaux
     } else if (a && a.multi) {
@@ -466,6 +475,72 @@ function paneteam(el, p) {
     await api(`/api/projets/${p.id}/membres/${b.dataset.rm}`, { method: "DELETE" }).catch((er) => toast(er.message));
     viewProject(p.id, "equipe");
   }));
+}
+
+// --- Structure : proposition automatique et édition des poteaux / poutres
+async function panestructure(el, p) {
+  const busy = p.tache && (p.tache.status === "en_attente" || p.tache.status === "en_cours");
+  const lastJob = p.tache && p.tache.kind === "structure" ? jobBanner(p.tache) : (busy ? jobBanner(p.tache) : "");
+  const hasPlan = !!(p.configuration.projet || {}).plan;
+  let data = null, err = "";
+  try { data = await api(`/api/projets/${p.id}/structure`); } catch (e) { err = e.message; }
+  const ed = canEdit();
+  el.innerHTML = `<section class="card">
+    <h2 style="margin-top:0">Structure (poteaux et poutres)</h2>
+    <p class="small muted">BatiCalc propose une ossature d'après les plans (poteaux dessinés, sinon murs : angles, croisements,
+      portées ≤ 4,5 m, alignement sur les files et sur le niveau inférieur). Corrigez-la ici avant de lancer le calcul.</p>
+    ${lastJob}
+    ${data ? `<p class="small">Modèle affiché : ${data.source === "edite" ? '<span class="badge ok">modifié par l\'ingénieur</span> (utilisé pour le calcul)' : '<span class="badge warn">proposition automatique</span> à vérifier'}
+      · ${data.niveaux.map((n) => `${esc(n.nom)} : ${n.poteaux.length} poteaux, ${n.poutres.length} poutres`).join(" · ")}</p>` : `<p class="muted">${esc(err)}</p>`}
+    <div class="actions">
+      ${ed ? `<button id="spro" ${busy || !hasPlan ? "disabled" : ""}>${data ? "Reproposer la structure" : "Proposer la structure"}</button>` : ""}
+      ${ed && data ? `<button id="ssave" disabled>Enregistrer</button>` : ""}
+      ${ed && data && data.source === "edite" ? `<button class="ghost" id="sreset">Revenir à la proposition automatique</button>` : ""}
+      ${ed && data ? `<button class="ghost" id="scalc" ${busy ? "disabled" : ""}>Enregistrer et calculer</button>` : ""}
+    </div>
+    ${hasPlan ? "" : '<p class="small muted">Importez d\'abord les plans (onglet « Plan & niveaux »).</p>'}
+  </section>
+  ${data ? `<section class="card" id="edhost"></section>` : ""}`;
+  const save = async () => {
+    const r = await api(`/api/projets/${p.id}/structure`, { method: "PUT", json: { niveaux: state.editor.data.niveaux } });
+    (r.notes || []).forEach((n) => toast(n));
+    state.editor.dirty = false;
+    return r;
+  };
+  const pro = document.getElementById("spro");
+  if (pro) pro.onclick = async () => {
+    if (data && data.source === "edite" && !confirm("Une nouvelle proposition remplace vos modifications. Continuer ?")) return;
+    try {
+      if (data && data.source === "edite") await api(`/api/projets/${p.id}/structure`, { method: "DELETE" });
+      const r = await api(`/api/projets/${p.id}/structure/proposer`, { method: "POST" });
+      state.editor = null; toast("Proposition en cours…"); watchJob(r.tache); viewProject(p.id, "structure");
+    } catch (e) { toast(e.message); }
+  };
+  if (!data) return;
+  const { mountEditor } = await import("/static/editor.js");
+  const sv = document.getElementById("ssave");
+  state.editor = mountEditor(document.getElementById("edhost"), data, {
+    editable: ed, toast,
+    onChange: (e) => { if (sv) sv.disabled = !e.dirty; },
+  });
+  if (sv) sv.onclick = async () => {
+    try { await save(); toast("Structure enregistrée : elle sera utilisée pour le calcul."); state.editor = null; viewProject(p.id, "structure"); }
+    catch (e) { toast(e.message); }
+  };
+  const rs = document.getElementById("sreset");
+  if (rs) rs.onclick = async () => {
+    if (!confirm("Abandonner les modifications et revenir à la proposition automatique ?")) return;
+    await api(`/api/projets/${p.id}/structure`, { method: "DELETE" }).catch((e) => toast(e.message));
+    state.editor = null; viewProject(p.id, "structure");
+  };
+  const sc = document.getElementById("scalc");
+  if (sc) sc.onclick = async () => {
+    try {
+      if (state.editor.dirty) await save();
+      state.editor = null;
+      await runCalc(p.id);
+    } catch (e) { toast(e.message); }
+  };
 }
 
 // --- Modèle 2D / 3D

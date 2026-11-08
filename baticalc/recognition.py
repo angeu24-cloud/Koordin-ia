@@ -135,29 +135,53 @@ def build_model(
     origin: tuple[float, float] | None = None,
     rooms: bool = True,
     usages: list[dict] | None = None,
+    propose: bool | None = None,
+    column_span: float = 4.5,
 ) -> Building:
     """Modèle d'un plan : poteaux, contour du plancher, murs, files, poutres.
 
     `origin` : origine imposée (coordonnées du dessin, m) pour caler plusieurs planches
     dans un même repère ; par défaut, coin bas-gauche de la trame des poteaux.
+    `propose` : True = ossature proposée d'après les murs (poteaux ignorés), None = seulement
+    si le plan ne dessine pas de poteaux ; `column_span` : écartement maximal des poteaux proposés.
     """
     rects, method = find_columns(drawing, layer=column_layer)
     bld = Building(n_levels=n_levels, floor_height=floor_height, source=drawing.source)
     bld.warnings.extend(drawing.warnings)
     bld.warnings.append(f"Poteaux détectés par : {method} ({len(rects)} trouvés).")
-    if len(rects) < 4:
+    if propose is None:
+        propose = len(rects) < 4
+    if propose:
+        rects = []
+        if not drawing.segments and not drawing.rects:
+            bld.warnings.append("Plan vide : aucun trait exploitable.")
+            return bld
+    elif len(rects) < 4:
         bld.warnings.append(
             "Moins de 4 poteaux détectés : vérifiez le calque des poteaux, l'échelle ou les unités du plan."
         )
         return bld
 
-    ox, oy = origin if origin is not None else (min(r.cx for r in rects), min(r.cy for r in rects))
-    bld.origin = [round(ox, 4), round(oy, 4)]
     keep = {r.layer for r in rects if r.layer}
     m = 4.0
-    bbox = (min(r.x0 for r in rects) - m, min(r.y0 for r in rects) - m,
-            max(r.x1 for r in rects) + m, max(r.y1 for r in rects) + m)
-    if getattr(drawing, "scan", None) and drawing.segments:   # plan scanné : poteaux rarement dessinés
+    if propose:     # plan d'architecte sans poteaux : emprise des traits pleins
+        segs = [sg for sg in drawing.segments if not sg.dashed] or drawing.segments
+        xs = [v for sg in segs for v in (sg.x0, sg.x1)] + [v for r in drawing.rects for v in (r.x0, r.x1)]
+        ys = [v for sg in segs for v in (sg.y0, sg.y1)] + [v for r in drawing.rects for v in (r.y0, r.y1)]
+        bbox = (min(xs) - m, min(ys) - m, max(xs) + m, max(ys) + m)
+        raw = detect_walls(drawing, bbox, 0.0, 0.0, set(), min_len=0.25)
+        if origin is not None:
+            ox, oy = origin
+        elif raw:
+            ox, oy = min(min(w[0], w[2]) for w in raw), min(min(w[1], w[3]) for w in raw)
+        else:
+            ox, oy = bbox[0] + 1, bbox[1] + 1
+    else:
+        ox, oy = origin if origin is not None else (min(r.cx for r in rects), min(r.cy for r in rects))
+        bbox = (min(r.x0 for r in rects) - m, min(r.y0 for r in rects) - m,
+                max(r.x1 for r in rects) + m, max(r.y1 for r in rects) + m)
+    bld.origin = [round(ox, 4), round(oy, 4)]
+    if not propose and getattr(drawing, "scan", None) and drawing.segments:   # plan scanné : poteaux rarement dessinés
         xs = [v for sg in drawing.segments for v in (sg.x0, sg.x1)]
         ys = [v for sg in drawing.segments for v in (sg.y0, sg.y1)]
         bbox = (min(bbox[0], min(xs) - 1), min(bbox[1], min(ys) - 1), max(bbox[2], max(xs) + 1), max(bbox[3], max(ys) + 1))
@@ -169,11 +193,14 @@ def build_model(
         if mask is not None:
             mask.x0 -= ox
             mask.y0 -= oy
+            if propose:
+                mask = main_component(mask, walls=[[w[0] - ox, w[1] - oy, w[2] - ox, w[3] - oy] for w in raw])
             bld.slab = mask.to_dict()
             bld.warnings.append(f"Contour de plancher déduit des murs : {mask.area:.1f} m² (à vérifier).")
         else:
             bld.warnings.append("Contour de plancher non détecté : on utilise les mailles complètes de la trame.")
-    bld.walls = detect_walls(drawing, bbox, ox, oy, keep)
+    bld.walls = detect_walls(drawing, bbox, ox, oy, keep, min_len=0.25 if propose else 1.0)
+    mask0 = mask       # plancher hors balcons (rives des poutres proposées)
 
     # Locaux étiquetés : usages, trémies, balcons, terrasses (sur la grille du contour)
     if rooms and mask is not None:
@@ -199,6 +226,24 @@ def build_model(
                     mask = SlabMask(mask.res, mask.x0, mask.y0, m2)
                     bld.slab = mask.to_dict()
 
+    if propose:
+        _propose_frame(bld, mask, column_span=min(column_span, max_span), beam_width=beam_width, perimeter=mask0,
+                       axes=axis_lines(drawing, bbox, ox, oy))
+        outside = None
+        if mask is not None:
+            outside = ~mask.mask
+            for z in bld.zones:
+                if z["type"] in ("balcon", "exterieur"):
+                    zm = SlabMask.from_dict(z["cells"])
+                    if zm.mask.shape == outside.shape:
+                        outside |= zm.mask
+        bld.openings = detect_openings(drawing, bbox, ox, oy, mask, outside)
+        if bld.zones:
+            from .mep.fixtures import detect_fixtures
+
+            bld.fixtures = detect_fixtures(drawing, bld.zones, ox, oy)
+        return bld
+
     bld.columns = []
     for r in sorted(rects, key=lambda r: (round(r.cy - oy, 1), r.cx)):
         bld.columns.append(Column(id="", x=round(r.cx - ox, 3), y=round(r.cy - oy, 3),
@@ -223,6 +268,197 @@ def build_model(
         "À VÉRIFIER par l'ingénieur avant exploitation."
     )
     return bld
+
+
+AXIS_LAYER_RE = re.compile(r"AXE|AXIS|GRID|TRAME|FILE", re.IGNORECASE)
+
+
+def axis_lines(drawing: Drawing, bbox, ox: float, oy: float) -> tuple[list[float], list[float]]:
+    """Axes du plan (files de l'architecte) : longs traits orthogonaux en tirets ou sur un calque d'axes."""
+    x0b, y0b, x1b, y1b = bbox
+    min_len = max(6.0, 0.35 * min(x1b - x0b, y1b - y0b))
+    xs, ys = [], []
+    for sg in drawing.segments:
+        if not (sg.dashed or AXIS_LAYER_RE.search(sg.layer or "")):
+            continue
+        dx, dy = abs(sg.x1 - sg.x0), abs(sg.y1 - sg.y0)
+        if dx <= 0.02 and dy >= min_len and x0b <= sg.x0 <= x1b:
+            xs.append(sg.x0 - ox)
+        elif dy <= 0.02 and dx >= min_len and y0b <= sg.y0 <= y1b:
+            ys.append(sg.y0 - oy)
+    return ([round(v, 3) for v in cluster(xs, 0.15)] if len(xs) >= 2 else [],
+            [round(v, 3) for v in cluster(ys, 0.15)] if len(ys) >= 2 else [])
+
+
+def main_component(mask: SlabMask, near: float = 3.0, walls=()) -> SlabMask:
+    """Bâtiment principal : zone du plancher qui porte le plus de murs (`walls`, sinon la plus grande)
+    et zones à moins de `near` m (écarte cartouches, légendes et détails dessinés à côté du plan)."""
+    from collections import deque
+
+    import numpy as np
+
+    a = mask.mask
+    lab = np.zeros(a.shape, dtype=np.int32)
+    boxes = []
+    for i0, j0 in zip(*np.nonzero(a)):
+        if lab[i0, j0]:
+            continue
+        k = len(boxes) + 1
+        lab[i0, j0] = k
+        q = deque([(i0, j0)])
+        n, b = 0, [i0, j0, i0, j0]
+        while q:
+            i, j = q.popleft()
+            n += 1
+            b = [min(b[0], i), min(b[1], j), max(b[2], i), max(b[3], j)]
+            for u, v in ((i + 1, j), (i - 1, j), (i, j + 1), (i, j - 1)):
+                if 0 <= u < a.shape[0] and 0 <= v < a.shape[1] and a[u, v] and not lab[u, v]:
+                    lab[u, v] = k
+                    q.append((u, v))
+        boxes.append((n, b))
+    if len(boxes) <= 1:
+        return mask
+    score = [float(n) for n, _ in boxes]
+    if walls:
+        score = [0.0] * len(boxes)
+        ny, nx = a.shape
+        for w in walls:
+            L = abs(w[2] - w[0]) + abs(w[3] - w[1])
+            for t in (0.25, 0.5, 0.75):
+                x, y = w[0] + t * (w[2] - w[0]), w[1] + t * (w[3] - w[1])
+                for dx, dy in ((0, 0), (0.2, 0), (-0.2, 0), (0, 0.2), (0, -0.2)):
+                    i, j = int((y + dy - mask.y0) / mask.res), int((x + dx - mask.x0) / mask.res)
+                    if 0 <= i < ny and 0 <= j < nx and lab[i, j]:
+                        score[lab[i, j] - 1] += L / 3
+                        break
+    big = max(range(len(boxes)), key=lambda k: (score[k], boxes[k][0]))
+    B = boxes[big][1]
+    g = near / mask.res
+    keep = [k + 1 for k, (n, b) in enumerate(boxes)
+            if k == big or (b[0] <= B[2] + g and b[2] >= B[0] - g and b[1] <= B[3] + g and b[3] >= B[1] - g)]
+    return SlabMask(mask.res, mask.x0, mask.y0, np.isin(lab, keep))
+
+
+def structural_walls(walls: list[list[float]], mask: SlabMask | None, *, gap: float = 1.6,
+                     min_len: float = 1.2) -> tuple[list[list[float]], list[tuple[float, float, float, float]]]:
+    """Murs porteurs probables : axes regroupés (même file à 30 cm près), tronçons d'un même mur
+    séparés par une baie (≤ `gap`) raccordés, cloisons minces et murs hors plancher écartés.
+
+    Renvoie (murs [x0, y0, x1, y1, ép.], baies [x0, y0, x1, y1] sur les axes des murs)."""
+    if not walls:
+        return [], []
+    thick = [w for w in walls if w[4] >= 0.12]
+    tot = sum(math.hypot(w[2] - w[0], w[3] - w[1]) for w in walls)
+    if sum(math.hypot(w[2] - w[0], w[3] - w[1]) for w in thick) >= 0.4 * tot:
+        walls = thick          # cloisons de 5 à 10 cm : non porteuses
+    inside = None
+    if mask is not None:
+        dil = SlabMask(mask.res, mask.x0, mask.y0, _dilate(mask.mask, int(0.6 / mask.res)))
+        ny, nx = dil.mask.shape
+
+        def inside(x, y):
+            i, j = int((y - dil.y0) / dil.res), int((x - dil.x0) / dil.res)
+            return 0 <= i < ny and 0 <= j < nx and bool(dil.mask[i, j])
+    out, gaps = [], []
+    for horiz in (True, False):
+        items = []
+        for w in walls:
+            h = abs(w[2] - w[0]) >= abs(w[3] - w[1])
+            if h != horiz:
+                continue
+            c = (w[1] + w[3]) / 2 if horiz else (w[0] + w[2]) / 2
+            a, b = (min(w[0], w[2]), max(w[0], w[2])) if horiz else (min(w[1], w[3]), max(w[1], w[3]))
+            items.append((c, a, b, w[4]))
+        items.sort()
+        files: list[list[tuple]] = []
+        for it in items:
+            if files and it[0] - files[-1][-1][0] <= 0.30:
+                files[-1].append(it)
+            else:
+                files.append([it])
+        for f in files:
+            c = sum(i[0] * (i[2] - i[1]) for i in f) / max(1e-9, sum(i[2] - i[1] for i in f))
+            t = max(i[3] for i in f)
+            runs: list[list[float]] = []
+            for _, a, b, _ in sorted(f, key=lambda i: i[1]):
+                if runs and a <= runs[-1][1] + gap:
+                    if a > runs[-1][1] + 0.3:
+                        gaps.append((runs[-1][1], a, c, horiz))
+                    runs[-1][1] = max(runs[-1][1], b)
+                else:
+                    runs.append([a, b])
+            for a, b in runs:
+                if b - a < min_len:
+                    continue
+                if inside is not None:
+                    pts = [(a + (b - a) * k / 4, c) if horiz else (c, a + (b - a) * k / 4) for k in (1, 2, 3)]
+                    if sum(inside(*p) for p in pts) < 2:
+                        continue
+                out.append([a, c, b, c, t] if horiz else [c, a, c, b, t])
+    gap_segs = [(a, c, b, c) if h else (c, a, c, b) for a, b, c, h in gaps]
+    return [[round(v, 3) for v in w] for w in out], gap_segs
+
+
+def _propose_frame(bld: Building, mask: SlabMask | None, *, column_span: float = 4.5,
+                   beam_width: float | None = None, perimeter: SlabMask | None = None,
+                   axes: tuple[list[float], list[float]] = ([], [])) -> None:
+    """Poteaux et poutres proposés d'après les murs (plan sans poteaux dessinés)."""
+    walls, gaps = structural_walls(bld.walls, mask)
+    if len(walls) < 3:
+        bld.warnings.append("Pas assez de murs reconnus pour proposer une ossature : placez les poteaux "
+                            "dans l'onglet « Structure ».")
+        return
+    rects = None
+    if mask is None:
+        rects = [(min(min(w[0], w[2]) for w in walls), min(min(w[1], w[3]) for w in walls),
+                  max(max(w[0], w[2]) for w in walls), max(max(w[1], w[3]) for w in walls))]
+    opts = dict(merge=0.40, col=(0.20, 0.20), beam=(beam_width or 0.20, 0.30), avoid=gaps, axes=axes)
+    bld._prop = dict(walls=walls, mask=mask, perimeter=perimeter, span=column_span, rects=rects, opts=opts)
+    _apply_proposal(bld)
+    bld.warnings.append(
+        f"Aucun poteau dessiné : ossature PROPOSÉE d'après les murs — {len(bld.columns)} poteaux 20×20, "
+        f"{len(bld.beams)} poutres, écartement ≤ {column_span:g} m (angles, croisements, extrémités de murs, "
+        "baies évitées). Corrigez-la dans l'onglet « Structure » avant le calcul."
+    )
+
+
+def _apply_proposal(bld: Building, *, extra_columns=(), carried: SlabMask | None = None,
+                    upper_walls=()) -> None:
+    """(Re)calcule l'ossature proposée de `bld` (contexte enregistré par `_propose_frame`).
+
+    `extra_columns` : poteaux imposés (continuité avec l'étage supérieur) ; `carried` : plancher porté
+    (celui de l'étage supérieur) ; `upper_walls` : murs de l'étage supérieur à reprendre par des poutres."""
+    from .ossature import beams_on_walls, structure_from_walls, structure_on_slab
+
+    ctx = bld._prop
+    walls, mask, span, opts = ctx["walls"], ctx["mask"], ctx["span"], dict(ctx["opts"])
+    slab = carried or mask
+    if slab is not None:
+        prop = structure_on_slab([tuple(w[:4]) for w in walls], slab,
+                                 perimeter=ctx["perimeter"] if carried is None else carried,
+                                 max_span=span, slab_span=span + 1.0, extra_columns=list(extra_columns),
+                                 virtual_walls=[tuple(w[:4]) for w in upper_walls], **opts)
+        upper_walls = ()
+    else:
+        prop = structure_from_walls([tuple(w[:4]) for w in walls], max_span=span, footprint=ctx["rects"],
+                                    extra_columns=list(extra_columns), **opts)
+    if upper_walls:   # poutres sous les murs de l'étage supérieur, entre poteaux de cet étage
+        have = {tuple(sorted((b.start, b.end))) for b in prop.beams}
+        more = beams_on_walls(prop.columns, upper_walls, beam=opts["beam"], start=len(prop.beams) + 1)
+        prop.beams += [b for b in more if tuple(sorted((b.start, b.end))) not in have]
+    cols = prop.column_map()
+    for b in prop.beams:
+        c1, c2 = cols[b.start], cols[b.end]
+        b.h = default_beam_height(math.hypot(c2.x - c1.x, c2.y - c1.y))
+    bld.columns, bld.beams, bld.panels = prop.columns, prop.beams, []
+    bld.grid_x, bld.grid_y = prop.grid_x, prop.grid_y
+    bld.walls = [w + [t] for w, t in zip([list(x[:4]) for x in prop.walls], [w[4] for w in walls])] \
+        if len(prop.walls) == len(walls) else prop.walls
+    if mask is None and carried is None:
+        bld.slab = prop.slab
+    bld.warnings = [w for w in bld.warnings if "file(s) de poutres" not in w] + \
+        [w for w in prop.warnings if "file(s) de poutres" in w]
+    bld.proposed = True
 
 
 def build_frame(
@@ -319,10 +555,12 @@ def build_frame(
 WALL_LAYER_RE = re.compile(r"MUR|WALL|MACON|MAÇON|CLOISON|AGGLO|VOILE|PAROI|FACADE|FAÇADE", re.IGNORECASE)
 
 
-def detect_walls(drawing: Drawing, bbox, ox: float, oy: float, keep_layers: set[str]) -> list[list[float]]:
+def detect_walls(drawing: Drawing, bbox, ox: float, oy: float, keep_layers: set[str],
+                 min_len: float = 1.0) -> list[list[float]]:
     """Murs = rectangles minces et longs, ou paires de traits parallèles espacés de 10 à 45 cm.
 
-    Renvoie des axes de murs [x0, y0, x1, y1, épaisseur] dans le repère du modèle.
+    Renvoie des axes de murs [x0, y0, x1, y1, épaisseur] dans le repère du modèle. `min_len` :
+    longueur minimale d'un tronçon (abaissée pour les murs dessinés en traits morcelés).
     """
     from .slab import NON_BARRIER_RE
 
@@ -343,7 +581,7 @@ def detect_walls(drawing: Drawing, bbox, ox: float, oy: float, keep_layers: set[
         if not usable(r.layer) or not (x0b <= r.cx <= x1b and y0b <= r.cy <= y1b):
             continue
         t, L = min(r.width, r.height), max(r.width, r.height)
-        if 0.08 <= t <= 0.45 and L >= 1.0:
+        if 0.08 <= t <= 0.45 and L >= min_len:
             if r.width >= r.height:
                 walls.append([r.x0 - ox, r.cy - oy, r.x1 - ox, r.cy - oy, t])
             else:
@@ -351,7 +589,7 @@ def detect_walls(drawing: Drawing, bbox, ox: float, oy: float, keep_layers: set[
     hs, vs = [], []
     edges = list(drawing.segments)
     for r in drawing.rects:  # côtés des contours fermés (murs dessinés en polylignes)
-        if usable(r.layer) and max(r.width, r.height) >= 1.0 and min(r.width, r.height) > 0.45:
+        if usable(r.layer) and max(r.width, r.height) >= min_len and min(r.width, r.height) > 0.45:
             from .geometry import Segment
 
             edges += [Segment(r.x0, r.y0, r.x1, r.y0, r.layer), Segment(r.x0, r.y1, r.x1, r.y1, r.layer),
@@ -363,9 +601,9 @@ def detect_walls(drawing: Drawing, bbox, ox: float, oy: float, keep_layers: set[
                 and max(sg.y0, sg.y1) <= y1b):
             continue
         dx, dy = abs(sg.x1 - sg.x0), abs(sg.y1 - sg.y0)
-        if dy <= 0.02 and dx >= 1.0:
+        if dy <= 0.02 and dx >= min_len:
             hs.append((sg.y0, min(sg.x0, sg.x1), max(sg.x0, sg.x1)))
-        elif dx <= 0.02 and dy >= 1.0:
+        elif dx <= 0.02 and dy >= min_len:
             vs.append((sg.x0, min(sg.y0, sg.y1), max(sg.y0, sg.y1)))
     for lines, horiz in ((hs, True), (vs, False)):
         lines.sort()
@@ -377,7 +615,7 @@ def detect_walls(drawing: Drawing, bbox, ox: float, oy: float, keep_layers: set[
                 if gap < 0.08:
                     continue
                 lo, hi = max(a1, a2), min(b1, b2)
-                if hi - lo >= 1.0:
+                if hi - lo >= min_len:
                     mid = (c1 + c2) / 2
                     if horiz:
                         walls.append([lo - ox, mid - oy, hi - ox, mid - oy, gap])

@@ -40,6 +40,11 @@ def _add_import_args(p: argparse.ArgumentParser) -> None:
                                           "ex. « RDC,ETAGE 1,ETAGE 2,TERRASSE »")
     p.add_argument("--sans-locaux", action="store_true",
                    help="Ne pas lire les locaux (usages, trémies, balcons) : charges uniformes")
+    p.add_argument("--proposer-poteaux", action="store_true", default=None,
+                   help="Ignorer les poteaux du plan et proposer l'ossature d'après les murs (automatique "
+                        "si le plan n'en dessine pas)")
+    p.add_argument("--ecartement-poteaux", type=float, default=4.5,
+                   help="Ossature proposée : écartement maximal des poteaux le long des murs (m, défaut 4,5)")
     p.set_defaults(usages=None)
     p.add_argument("--config", help="Fichier de configuration du projet (baticalc.json, voir « baticalc init »)")
     p.add_argument("-o", "--sortie", default="resultats", help="Dossier de sortie")
@@ -63,6 +68,8 @@ CONFIG_TEMPLATE = {
         "hauteurs": None,
         "liste_niveaux": None,
         "calque_poteaux": None,
+        "proposer_poteaux": None,
+        "ecartement_poteaux": 4.5,
         "echelle": None,
         "echelle_px_m": None,
         "unites": None,
@@ -244,6 +251,7 @@ def _import_project(args):
         levels_spec=[n.strip() for n in args.liste_niveaux.split(",")] if args.liste_niveaux else None,
         column_layer=args.calque_poteaux, max_span=args.portee_max, footprint=not args.sans_contour,
         default_height=args.hauteur, rooms=not args.sans_locaux, usages=args.usages,
+        propose=args.proposer_poteaux or None, column_span=args.ecartement_poteaux,
     )
     return proj, drawing
 
@@ -418,7 +426,8 @@ def _import_model(args) -> tuple[Building, object | None]:
         )
     bld = build_model(drawing, n_levels=args.niveaux, floor_height=args.hauteur, max_span=args.portee_max,
                       column_layer=args.calque_poteaux, footprint=not args.sans_contour,
-                      rooms=not args.sans_locaux, usages=args.usages)
+                      rooms=not args.sans_locaux, usages=args.usages,
+                      propose=args.proposer_poteaux or None, column_span=args.ecartement_poteaux)
     return bld, drawing
 
 

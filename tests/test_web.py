@@ -175,3 +175,45 @@ def test_several_plan_files(app, tmp_path):
     with open(b, "rb") as fb:
         r = ana.post(f"/api/projets/{pid}/plan?mode=ajouter", files=[("fichiers", ("etage_1.dxf", fb, "application/dxf"))])
     assert r.json()["fichiers"] == ["rdc.dxf", "etage_1.dxf"]
+
+
+def test_structure_editor(app, tmp_path):
+    ana = client(app, "ana@bet.ci", "Ana")
+    pid = ana.post("/api/projets", json={"nom": "Édition"}).json()["id"]
+    assert ana.get(f"/api/projets/{pid}/structure").status_code == 404
+    plan = write_sample_dxf(tmp_path / "plan.dxf")
+    with open(plan, "rb") as f:
+        ana.post(f"/api/projets/{pid}/plan", files={"fichier": ("plan.dxf", f, "application/dxf")})
+    r = ana.post(f"/api/projets/{pid}/structure/proposer")
+    assert r.status_code == 200, r.text
+    assert ana.get(f"/api/taches/{r.json()['tache']}").json()["status"] == "termine"
+    data = ana.get(f"/api/projets/{pid}/structure").json()
+    assert data["source"] == "auto" and data["niveaux"]
+    lv = data["niveaux"][0]
+    n0, b0 = len(lv["poteaux"]), len(lv["poutres"])
+    # ajout d'un poteau et d'une poutre, suppression d'un poteau et de ses poutres
+    a = lv["poteaux"][0]
+    lv["poteaux"].append({"id": "~P1", "x": a["x"] + 1.5, "y": a["y"], "b": 0.25, "h": 0.25})
+    lv["poutres"].append({"id": "~B1", "a": a["id"], "b": "~P1", "l": 0.2, "h": 0.4})
+    gone = lv["poteaux"].pop(-2)["id"]
+    lv["poutres"] = [b for b in lv["poutres"] if gone not in (b["a"], b["b"])]
+    r = ana.put(f"/api/projets/{pid}/structure", json=data)
+    assert r.status_code == 200, r.text
+    out = r.json()
+    new = out["niveaux"][0]
+    assert out["source"] == "edite" and len(new["poteaux"]) == n0
+    assert not any(c["id"].startswith("~") for c in new["poteaux"])
+    assert not any(b["id"].startswith("~") or b["a"].startswith("~") or b["b"].startswith("~") for b in new["poutres"])
+    assert len({b["id"] for b in new["poutres"]}) == len(new["poutres"]) <= b0 + 1
+    assert ana.get(f"/api/projets/{pid}").json()["configuration"]["projet"]["modele"] == "modele_edite.json"
+    # section hors limites refusée
+    bad = json.loads(json.dumps(out))
+    bad["niveaux"][0]["poteaux"][0]["b"] = 3.0
+    assert ana.put(f"/api/projets/{pid}/structure", json=bad).status_code == 400
+    # calcul sur le modèle modifié
+    assert ana.post(f"/api/projets/{pid}/calcul").status_code == 200
+    assert ana.get(f"/api/projets/{pid}").json()["tache"]["status"] == "termine"
+    # retour à la proposition automatique
+    assert ana.delete(f"/api/projets/{pid}/structure").status_code == 200
+    assert ana.get(f"/api/projets/{pid}/structure").json()["source"] == "auto"
+    assert "modele" not in ana.get(f"/api/projets/{pid}").json()["configuration"]["projet"]

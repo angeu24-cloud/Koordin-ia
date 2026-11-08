@@ -82,6 +82,7 @@ class Building:
     openings: list[dict] = field(default_factory=list)  # portes / fenêtres / baies lues sur le plan du niveau
     rooms: list[dict] | None = None        # locaux du niveau lui-même (finitions) ; défaut : zones
     fixtures: list[dict] = field(default_factory=list)  # appareils sanitaires du niveau
+    proposed: bool = False                 # ossature proposée d'après les murs (poteaux non dessinés)
 
     # ------------------------------------------------------------------ helpers
     def column_map(self) -> dict[str, Column]:
@@ -116,6 +117,7 @@ class Building:
             openings=d.get("openings", []),
             rooms=d.get("rooms"),
             fixtures=d.get("fixtures", []),
+            proposed=d.get("proposed", False),
         )
 
     def save(self, path: str | Path) -> None:

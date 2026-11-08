@@ -98,3 +98,15 @@ th { color: var(--muted); font-weight: 600; }
   .card { padding: 12px; }
   th, td { padding: 6px; }
 }
+.seg { display: inline-flex; gap: 0; }
+.seg button { border-radius: 0; }
+.seg button:first-child { border-radius: 8px 0 0 8px; }
+.seg button:last-child { border-radius: 0 8px 8px 0; }
+.seg button + button { border-left-width: 0; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.info label { margin: 6px 0 2px; }
+.info input { min-height: 34px; padding: 5px 8px; }
+label.inline { display: flex; gap: 6px; align-items: center; }
+.info .actions { margin-top: 8px; }
+.info .actions button { min-height: 34px; padding: 5px 10px; }
+@media (max-width: 600px) { .seg button { padding: 9px 9px; } .info { left: 8px; right: 8px; max-width: none; } }
