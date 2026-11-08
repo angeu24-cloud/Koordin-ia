@@ -151,3 +151,27 @@ def test_signup_rules(tmp_path):
     assert signup(coded, "collegue@bet.ci").status_code == 403
     assert signup(coded, "collegue@bet.ci", code="faux").status_code == 403
     assert signup(coded, "collegue@bet.ci", code="BET-2026").status_code == 200
+
+
+def test_several_plan_files(app, tmp_path):
+    """Plusieurs fichiers déposés ensemble : assemblés comme des planches ; ajout et retrait."""
+    from baticalc.sample import write_sample_dxf
+
+    ana = client(app, "multi@bet.ci", "Multi")
+    pid = ana.post("/api/projets", json={"nom": "Multi"}).json()["id"]
+    a = write_sample_dxf(tmp_path / "rdc.dxf")
+    b = write_sample_dxf(tmp_path / "etage_1.dxf")
+    with open(a, "rb") as fa, open(b, "rb") as fb:
+        r = ana.post(f"/api/projets/{pid}/plan", files=[("fichiers", ("rdc.dxf", fa, "application/dxf")),
+                                                        ("fichiers", ("etage_1.dxf", fb, "application/dxf"))])
+    assert r.status_code == 200, r.text
+    assert r.json()["fichiers"] == ["rdc.dxf", "etage_1.dxf"]
+    p = ana.get(f"/api/projets/{pid}").json()
+    assert p["configuration"]["projet"]["plan"] == ["plans/rdc.dxf", "plans/etage_1.dxf"]
+    titres = [s["titre"] for s in p["analyse"]["planches"]]
+    assert "PLAN RDC" in titres and "PLAN ETAGE 1" in titres
+    r = ana.delete(f"/api/projets/{pid}/plan/etage_1.dxf")
+    assert r.status_code == 200 and r.json()["fichiers"] == ["rdc.dxf"]
+    with open(b, "rb") as fb:
+        r = ana.post(f"/api/projets/{pid}/plan?mode=ajouter", files=[("fichiers", ("etage_1.dxf", fb, "application/dxf"))])
+    assert r.json()["fichiers"] == ["rdc.dxf", "etage_1.dxf"]

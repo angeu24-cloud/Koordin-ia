@@ -36,6 +36,11 @@ def _safe_filename(name: str) -> str:
     return base
 
 
+def _plan_list(cfg: dict) -> list[str]:
+    p = (cfg.get("projet") or {}).get("plan")
+    return [] if not p else ([p] if isinstance(p, str) else list(p))
+
+
 def create_app(data_dir: str | Path | None = None, sync_jobs: bool | None = None,
                inscription: str | None = None, code_inscription: str | None = None) -> FastAPI:
     """Inscriptions :
@@ -125,14 +130,16 @@ def create_app(data_dir: str | Path | None = None, sync_jobs: bool | None = None
         from ..sheets import find_sheets
 
         cfg = read_cfg(pid)
-        plan = store.project_dir(pid) / cfg["projet"]["plan"]
+        rel = _plan_list(cfg)
+        plans = [store.project_dir(pid) / r for r in rel]
+        plan = plans[0] if len(plans) == 1 else plans
         lec = cfg.get("lecture", {})
-        if plan.suffix.lower() == ".ifc":
+        if len(plans) == 1 and plans[0].suffix.lower() == ".ifc":
             from ..interop.ifc_import import import_ifc
 
             pj = import_ifc(plan)
             z = 0.0
-            out = {"fichier": plan.name, "planches": [], "niveaux": [], "notes": pj.warnings, "multi": True,
+            out = {"fichier": plans[0].name, "planches": [], "niveaux": [], "notes": pj.warnings, "multi": True,
                    "ifc": True}
             for st in pj.storeys:
                 out["niveaux"].append({"nom": st.name, "code": st.name, "altitude": round(z, 2), "hauteur": st.height,
@@ -145,7 +152,7 @@ def create_app(data_dir: str | Path | None = None, sync_jobs: bool | None = None
         drawing = import_plan(plan, units=lec.get("unites"), scale=lec.get("echelle"),
                               px_per_m=lec.get("echelle_px_m"))
         sheets = find_sheets(drawing)
-        out = {"fichier": plan.name, "planches": [
+        out = {"fichier": " + ".join(p_.name for p_ in plans), "planches": [
             {"numero": s.index, "titre": s.title, "plan": s.is_plan,
              "taille": [round(s.bbox[2] - s.bbox[0], 1), round(s.bbox[3] - s.bbox[1], 1)]} for s in sheets],
             "niveaux": [], "notes": list(drawing.warnings), "multi": False}
@@ -330,17 +337,42 @@ def create_app(data_dir: str | Path | None = None, sync_jobs: bool | None = None
         path.write_bytes(data)
         return path
 
-    @app.post("/api/projets/{pid}/plan")
-    async def upload_plan(pid: int, fichier: UploadFile = File(...), user: dict = Depends(current_user)):
-        project_access(pid, user, "editeur")
-        path = await save_upload(pid, fichier, "plans", PLAN_EXT)
+    def _set_plans(pid: int, user: dict, rel: list[str], what: str):
         cfg = read_cfg(pid)
-        cfg["projet"]["plan"] = f"plans/{path.name}"
-        cfg.setdefault("lecture", {})["planche"] = None
+        cfg["projet"]["plan"] = (rel[0] if len(rel) == 1 else rel) if rel else None
+        lec = cfg.setdefault("lecture", {})
+        lec["planche"] = None
+        lec["affectation"] = None
         write_cfg(pid, cfg)
-        store.log(pid, user["id"], f"Plan importé : {path.name}")
+        store.log(pid, user["id"], what)
+        if not rel:
+            (store.project_dir(pid) / "analyse.json").unlink(missing_ok=True)
+            return {"tache": None, "fichiers": []}
         jid = submit(pid, "analyse", user["id"], lambda: analyse(pid))
-        return {"tache": jid, "fichier": path.name}
+        return {"tache": jid, "fichiers": [Path(r).name for r in rel]}
+
+    @app.post("/api/projets/{pid}/plan")
+    async def upload_plan(pid: int, fichiers: list[UploadFile] | None = File(None), fichier: UploadFile | None = File(None),
+                          mode: str = "remplacer", user: dict = Depends(current_user)):
+        """Un ou plusieurs fichiers (un par niveau, coupes, façades) ; mode « ajouter » ou « remplacer »."""
+        project_access(pid, user, "editeur")
+        fichiers = list(fichiers or []) + ([fichier] if fichier else [])
+        if not fichiers:
+            raise HTTPException(400, "Aucun fichier reçu.")
+        names = [(await save_upload(pid, f, "plans", PLAN_EXT)).name for f in fichiers]
+        rel = [f"plans/{n}" for n in names]
+        if mode == "ajouter":
+            rel = [r for r in _plan_list(read_cfg(pid)) if r not in rel] + rel
+        if len(rel) > 1 and any(r.lower().endswith(".ifc") for r in rel):
+            raise HTTPException(400, "Une maquette IFC se dépose seule (elle contient déjà tous les niveaux).")
+        return _set_plans(pid, user, rel, f"Plan(s) importé(s) : {', '.join(names)}")
+
+    @app.delete("/api/projets/{pid}/plan/{name}")
+    def delete_plan(pid: int, name: str, user: dict = Depends(current_user)):
+        project_access(pid, user, "editeur")
+        rel = [r for r in _plan_list(read_cfg(pid)) if Path(r).name != name]
+        (store.project_dir(pid) / "plans" / _safe_filename(name)).unlink(missing_ok=True)
+        return _set_plans(pid, user, rel, f"Plan retiré : {name}")
 
     @app.post("/api/projets/{pid}/analyse")
     def reanalyse(pid: int, user: dict = Depends(current_user)):

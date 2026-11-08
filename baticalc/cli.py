@@ -18,7 +18,8 @@ from .model import Building, LoadSettings
 
 
 def _add_import_args(p: argparse.ArgumentParser) -> None:
-    p.add_argument("plan", nargs="?", help="Plan d'étage courant : .dwg, .dxf ou .pdf")
+    p.add_argument("plan", nargs="*", help="Plan(s) de l'architecte : .dwg, .dxf, .pdf, image scannée ; plusieurs fichiers "
+                                          "(un par niveau, coupes, façades) sont assemblés comme des planches")
     p.add_argument("--echelle", type=int, help="PDF : échelle du plan (100 pour 1/100). Détectée si absente.")
     p.add_argument("--page", type=int, default=1, help="PDF : numéro de page (défaut 1)")
     p.add_argument("--unites", choices=["mm", "cm", "m"], help="DWG/DXF : unités du dessin si non définies")
@@ -144,7 +145,8 @@ def apply_config(args, parser: argparse.ArgumentParser, raw: list[str]) -> None:
         if key == "plan" and positional_plan:
             continue
         if key in _PATH_KEYS:
-            val = str((path.parent / val).resolve())
+            val = [str((path.parent / v).resolve()) for v in val] if isinstance(val, list) else \
+                str((path.parent / val).resolve())
         setattr(args, key, val)
         if key == "niveaux":
             args.niveaux_set = True
@@ -196,14 +198,17 @@ def cmd_init(args) -> int:
     if args.nom:
         cfg["projet"]["nom"] = args.nom
     if args.plan:
-        src = Path(args.plan)
-        (folder / "plans").mkdir(exist_ok=True)
-        dst = folder / "plans" / src.name
-        if src.resolve() != dst.resolve():
-            import shutil
+        import shutil
 
-            shutil.copyfile(src, dst)
-        cfg["projet"]["plan"] = f"plans/{src.name}"
+        (folder / "plans").mkdir(exist_ok=True)
+        rel = []
+        for p_ in (args.plan if isinstance(args.plan, list) else [args.plan]):
+            src = Path(p_)
+            dst = folder / "plans" / src.name
+            if src.resolve() != dst.resolve():
+                shutil.copyfile(src, dst)
+            rel.append(f"plans/{src.name}")
+        cfg["projet"]["plan"] = rel[0] if len(rel) == 1 else rel
     if args.norme:
         cfg["reglement"]["norme"] = args.norme
         cfg["reglement"]["fe"] = 500.0 if args.norme == "ec2" else 400.0
@@ -211,7 +216,7 @@ def cmd_init(args) -> int:
     print(f"Projet créé : {folder}")
     print(f"  - configuration : {cfg_path}  (charges, sol, norme, planches… à compléter)")
     if args.plan:
-        print(f"  - plan copié    : {folder / 'plans' / Path(args.plan).name}")
+        print(f"  - plan(s) copié(s) dans {folder / 'plans'}")
     print(f"Ensuite : baticalc niveaux --config {cfg_path}")
     print(f"          baticalc calculer --config {cfg_path}")
     return 0
@@ -468,7 +473,7 @@ def cmd_calculer(args) -> int:
             if args.hauteur_set:
                 bld.floor_height = args.hauteur
             proj = Project.from_building(bld)
-    elif args.plan and Path(args.plan).suffix.lower() == ".ifc":
+    elif args.plan and isinstance(args.plan, str) and Path(args.plan).suffix.lower() == ".ifc":
         from .interop.ifc_import import import_ifc
 
         proj = import_ifc(args.plan, max_span=args.portee_max)
@@ -718,7 +723,7 @@ def main(argv: list[str] | None = None) -> int:
 
     it = sub.add_parser("init", help="Créer le dossier d'un nouveau projet avec son fichier de configuration")
     it.add_argument("dossier", help="Dossier du projet")
-    it.add_argument("--plan", help="Plan d'architecte à copier dans le projet")
+    it.add_argument("--plan", nargs="+", help="Plan(s) d'architecte à copier dans le projet")
     it.add_argument("--nom", help="Nom du projet")
     it.add_argument("--norme", choices=["bael", "ec2"])
     it.add_argument("--force", action="store_true", help="Remplacer une configuration existante")
@@ -744,6 +749,8 @@ def main(argv: list[str] | None = None) -> int:
 
     raw = sys.argv[1:] if argv is None else argv
     args = p.parse_args(raw)
+    if isinstance(getattr(args, "plan", None), list):   # un fichier : chemin simple ; plusieurs : liste
+        args.plan = None if not args.plan else (args.plan[0] if len(args.plan) == 1 else args.plan)
     args.niveaux_set = any(a.startswith("--niveaux") for a in raw)
     args.hauteur_set = any(a.startswith("--hauteur") for a in raw)
     args.nom = getattr(args, "nom", None)

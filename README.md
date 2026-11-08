@@ -366,6 +366,20 @@ bld = structure_from_walls(murs, max_span=4.5, col=(0.20, 0.20), beam=(0.20, 0.3
   longrines (20×35 par défaut) sont dimensionnées sous tous les murs, et leurs réactions sont
   ajoutées aux semelles.
 
+## Plusieurs fichiers de plans
+
+Quand l'architecte livre un fichier par niveau, ainsi que les coupes et les façades :
+
+- **Application web** : déposez ou sélectionnez tous les fichiers d'un coup dans l'onglet *Plan &
+  niveaux*. Vous pouvez ensuite en ajouter ou en retirer.
+- **Ligne de commande** : `baticalc calculer rdc.pdf etage1.pdf coupe.pdf --tous-niveaux`.
+- **Configuration** : `"plan": ["plans/rdc.dwg", "plans/etage.dwg"]`.
+
+Les fichiers sont assemblés côte à côte comme les planches d'un même dessin. Chacun garde son
+échelle. Un fichier sans cadre titré reçoit un cadre, avec un titre tiré de son nom (« rdc.pdf »
+devient « PLAN RDC »). L'affectation des planches aux niveaux fonctionne ensuite comme pour un DWG
+multi-planches. Une maquette IFC se dépose seule.
+
 ## Plans scannés (PDF image, PNG, JPG, TIFF)
 
 Un plan d'architecte scanné ou photographié bien à plat se lit comme un DWG :

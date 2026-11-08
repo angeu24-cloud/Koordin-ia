@@ -172,14 +172,19 @@ function watchJob(jid) {
 // --- Plan & niveaux
 function paneplan(el, p) {
   const a = p.analyse, cfg = p.configuration, lec = cfg.lecture || {};
+  const plans = (Array.isArray(cfg.projet.plan) ? cfg.projet.plan : cfg.projet.plan ? [cfg.projet.plan] : []).map((x) => x.split("/").pop());
   el.innerHTML = `
   <section class="card">
     <h2 style="margin-top:0">Plan de l'architecte</h2>
     <p class="small muted">DWG, DXF ou PDF vectoriel de l'architecte (un DWG peut contenir toutes les planches), <b>plan scanné</b> (PDF image, PNG, JPG : échelle lue sur les cotes), ou maquette <b>IFC</b> exportée de Revit, ArchiCAD, Robot, CYPECAD, Graitec…</p>
-    ${cfg.projet.plan ? `<p>Plan actuel : <b>${esc(cfg.projet.plan.split("/").pop())}</b></p>` : ""}
-    ${canEdit() ? `<div class="drop" id="drop"><p>Déposez le fichier ici ou</p>
-      <label class="button" style="display:inline-flex;color:#fff">Choisir un fichier
-      <input type="file" id="file" accept=".dwg,.dxf,.pdf,.ifc,.png,.jpg,.jpeg,.tif,.tiff" hidden></label></div>` : ""}
+    ${plans.length ? `<div class="table-wrap"><table><tr><th>Fichier${plans.length > 1 ? "s (assemblés comme des planches)" : ""}</th><th></th></tr>
+      ${plans.map((f) => `<tr><td>${esc(f)}</td><td>${canEdit() ? `<button class="ghost small" data-rmplan="${esc(f)}">Retirer</button>` : ""}</td></tr>`).join("")}
+      </table></div>` : ""}
+    ${canEdit() ? `<div class="drop" id="drop"><p>Déposez un ou plusieurs fichiers ici (un par niveau, coupes, façades…) ou</p>
+      <label class="button" style="display:inline-flex;color:#fff">${plans.length ? "Ajouter des fichiers" : "Choisir des fichiers"}
+      <input type="file" id="file" multiple accept=".dwg,.dxf,.pdf,.ifc,.png,.jpg,.jpeg,.tif,.tiff" hidden></label>
+      ${plans.length ? `<label class="button ghost" style="display:inline-flex">Remplacer tous les plans
+      <input type="file" id="filerep" multiple accept=".dwg,.dxf,.pdf,.ifc,.png,.jpg,.jpeg,.tif,.tiff" hidden></label>` : ""}</div>` : ""}
     ${jobBanner(p.tache && p.tache.kind === "analyse" ? p.tache : null)}
   </section>
   ${a ? `<section class="card">
@@ -210,20 +215,28 @@ function paneplan(el, p) {
     ${canEdit() ? `<div class="actions"><button id="save">Enregistrer</button><button class="ghost" id="calc">Enregistrer et calculer</button></div>` : ""}
   </section>` : ""}`;
   if (canEdit()) {
-    const send = async (file) => {
-      const fd = new FormData(); fd.append("fichier", file);
-      toast("Envoi du plan…");
-      const r = await api(`/api/projets/${p.id}/plan`, { method: "POST", body: fd }).catch((e) => toast(e.message));
-      if (r) { toast("Plan reçu : analyse en cours."); watchJob(r.tache); viewProject(p.id, "plan"); }
+    const send = async (files, mode) => {
+      if (!files || !files.length) return;
+      const fd = new FormData();
+      [...files].forEach((f) => fd.append("fichiers", f));
+      toast(files.length > 1 ? `Envoi de ${files.length} fichiers…` : "Envoi du plan…");
+      const r = await api(`/api/projets/${p.id}/plan?mode=${mode}`, { method: "POST", body: fd }).catch((e) => toast(e.message));
+      if (r) { toast(`${r.fichiers.length} fichier(s) : analyse en cours.`); if (r.tache) watchJob(r.tache); viewProject(p.id, "plan"); }
     };
     const f = document.getElementById("file");
-    if (f) f.onchange = () => f.files[0] && send(f.files[0]);
+    if (f) f.onchange = () => send(f.files, plans.length ? "ajouter" : "remplacer");
+    const fr = document.getElementById("filerep");
+    if (fr) fr.onchange = () => send(fr.files, "remplacer");
     const drop = document.getElementById("drop");
     if (drop) {
       drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
       drop.ondragleave = () => drop.classList.remove("over");
-      drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("over"); if (e.dataTransfer.files[0]) send(e.dataTransfer.files[0]); };
+      drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("over"); send(e.dataTransfer.files, plans.length ? "ajouter" : "remplacer"); };
     }
+    el.querySelectorAll("[data-rmplan]").forEach((b) => (b.onclick = async () => {
+      const r = await api(`/api/projets/${p.id}/plan/${encodeURIComponent(b.dataset.rmplan)}`, { method: "DELETE" }).catch((e) => toast(e.message));
+      if (r) { toast("Fichier retiré."); if (r.tache) watchJob(r.tache); viewProject(p.id, "plan"); }
+    }));
   }
   const save = async (thenCalc) => {
     const lecture = { calque_poteaux: calque.value.trim() || null, echelle: ech.value ? Number(ech.value) : null };
