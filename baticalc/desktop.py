@@ -234,6 +234,22 @@ def self_test(report: Path) -> int:
             lines.append(f"serveur : {'OK' if up else 'ÉCHEC'} (port {port})")
             ok &= up
             srv.stop()
+        # lecture des plans scannés : OCR (modèles embarqués)
+        try:
+            import numpy as np
+            from PIL import Image, ImageDraw, ImageFont
+
+            from .importers.raster_importer import ocr_tokens
+
+            im = Image.new("RGB", (700, 160), "white")
+            ImageDraw.Draw(im).text((40, 50), "CUISINE 12,50", fill=0, font=ImageFont.load_default(size=48))
+            toks = ocr_tokens(np.asarray(im), upscale=1.0)
+            lu = " ".join(t[2] for t in toks).upper()
+            lines.append(f"OCR : {'OK' if 'CUISINE' in lu else 'ÉCHEC'} ({lu[:40]})")
+            ok &= "CUISINE" in lu or not getattr(sys, "frozen", False)
+        except ImportError as exc:
+            lines.append(f"OCR indisponible : {exc}")
+            ok &= not getattr(sys, "frozen", False)
         tool = os.environ.get("BATICALC_DWG2DXF") or shutil.which("dwg2dxf")
         lines.append(f"LibreDWG : {tool or 'absent'}")
         if tool:   # le convertisseur se lance (bibliothèques présentes)

@@ -24,7 +24,7 @@ from .storage import ROLES, Storage
 STATIC = Path(__file__).parent / "static"
 COOKIE = "baticalc_session"
 MAX_UPLOAD = 200 * 1024 * 1024
-PLAN_EXT = {".dwg", ".dxf", ".pdf", ".ifc"}
+PLAN_EXT = {".dwg", ".dxf", ".pdf", ".ifc", ".png", ".jpg", ".jpeg", ".tif", ".tiff"}
 REPORT_EXT = {".pdf", ".txt", ".docx"}
 BPU_EXT = {".xls", ".xlsx", ".xlsm", ".csv"}
 SAFE_NAME = re.compile(r"^[\w\-. ]{1,120}$")
@@ -142,7 +142,8 @@ def create_app(data_dir: str | Path | None = None, sync_jobs: bool | None = None
                                                                  encoding="utf-8")
             print(f"Modèle IFC lu : {len(pj.storeys)} étage(s).")
             return
-        drawing = import_plan(plan, units=lec.get("unites"), scale=lec.get("echelle"))
+        drawing = import_plan(plan, units=lec.get("unites"), scale=lec.get("echelle"),
+                              px_per_m=lec.get("echelle_px_m"))
         sheets = find_sheets(drawing)
         out = {"fichier": plan.name, "planches": [
             {"numero": s.index, "titre": s.title, "plan": s.is_plan,

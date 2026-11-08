@@ -157,6 +157,10 @@ def build_model(
     m = 4.0
     bbox = (min(r.x0 for r in rects) - m, min(r.y0 for r in rects) - m,
             max(r.x1 for r in rects) + m, max(r.y1 for r in rects) + m)
+    if getattr(drawing, "scan", None) and drawing.segments:   # plan scanné : poteaux rarement dessinés
+        xs = [v for sg in drawing.segments for v in (sg.x0, sg.x1)]
+        ys = [v for sg in drawing.segments for v in (sg.y0, sg.y1)]
+        bbox = (min(bbox[0], min(xs) - 1), min(bbox[1], min(ys) - 1), max(bbox[2], max(xs) + 1), max(bbox[3], max(ys) + 1))
 
     # Contour du plancher déduit des murs (plans d'architecte)
     mask = None
@@ -175,7 +179,9 @@ def build_model(
     if rooms and mask is not None:
         from .zones import detect_zones, load_catalogue
 
-        zones, notes = detect_zones(drawing, mask, ox, oy, load_catalogue(usages), keep_layers=keep)
+        zones, notes = detect_zones(drawing, mask, ox, oy, load_catalogue(usages), keep_layers=keep,
+                                    door=1.25 if getattr(drawing, "scan", None) else 0.95,
+                                    unlabeled=bool(getattr(drawing, "scan", None)))
         bld.zones = zones
         bld.warnings += notes
         if zones:

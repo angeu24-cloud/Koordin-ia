@@ -107,6 +107,15 @@ def detect_fixtures(drawing: Drawing, rooms: list[dict], ox: float, oy: float) -
         for k, kind in enumerate(items):
             out.append({"type": kind, "x": round(x + 0.5 * (k % 3), 2), "y": round(y - 0.5 * (k // 3), 2),
                         "local": lb.name, "source": "étiquette"})
+    # 2 bis) pièces d'eau délimitées sans étiquette exploitable (plans scannés : « à confirmer »)
+    for z in rooms or []:
+        if not WET_NAME_RE.search(z["name"]) or z.get("x") is None:
+            continue
+        if any(math.hypot(f["x"] - z["x"], f["y"] - z["y"]) < 1.5 for f in out):
+            continue
+        for k, kind in enumerate(estimate_from_room(z)):
+            out.append({"type": kind, "x": round(z["x"] + 0.5 * (k % 3), 2), "y": round(z["y"] - 0.5 * (k // 3), 2),
+                        "local": z["name"], "source": "pièce d'eau supposée"})
     if out:
         return out
     # 3) tracés sur calques sanitaires explicites

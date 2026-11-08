@@ -344,6 +344,30 @@ Principales options de `calculer` (`baticalc calculer -h` pour la liste complèt
 | `--hauteurs` | coupes | Hauteurs imposées : `"RDC=3.29"` |
 | `--liste-niveaux` | coupes | Niveaux si les coupes n'en donnent pas : `"RDC,ETAGE 1,ETAGE 2,TERRASSE"` |
 
+## Plans scannés (PDF image, PNG, JPG, TIFF)
+
+Un plan d'architecte scanné ou photographié bien à plat se lit comme un DWG :
+`baticalc detecter plan_scan.pdf` (ou dépôt dans l'application web). Il faut l'option
+`pip install -e .[scan]`, déjà incluse dans le logiciel Windows et l'image Docker.
+
+- **Échelle** : lue sur les **chaînes de cotes**. Deux cotes voisines d'une même chaîne
+  (v1, v2 en cm) sont distantes de (v1 + v2)/2 × échelle ; on retient la valeur la plus
+  fréquente. À défaut, la donner en pixels par mètre (`--echelle-px-m`, ou `lecture.echelle_px_m`).
+- **Murs** : traits doubles parallèles (7 à 40 cm) ou traits épais. Sont écartés les lignes de
+  cote (un nombre à leur extrémité), les lettres, les hachures et escaliers en rouge. Les
+  fenêtres bleues comptent comme murs.
+- **Poteaux** : taches noircies de 15 à 60 cm, même traversées par les murs.
+- **Textes** : OCR hors ligne (RapidOCR), sur l'image et sur l'image tournée (cotes
+  verticales), à deux agrandissements. Les noms de pièces sont corrigés (« CUISNE » →
+  « CUISINE ») et les noms sur deux lignes fusionnés.
+- **Pièces** : délimitées depuis leur nom, portes refermées jusqu'à 1,25 m, sans déborder de
+  l'emprise du bâtiment. Une surface plausible est imposée aux pièces sans surface écrite. Les
+  petites pièces fermées sans nom lisible (1,5 à 6,5 m²) sont proposées comme « salle d'eau à
+  confirmer », et la plomberie les équipe.
+- **Limites** : la qualité dépend du scan (300 dpi conseillés, plan droit). Les poteaux sont
+  rarement dessinés sur un plan d'architecte : pour le calcul de structure, un DWG reste
+  préférable. Contrôler toujours `controle_modele.dxf` et les avertissements.
+
 ## Comment les plans sont lus
 
 - **Planches** : les cadres sont détectés (les cadres généraux qui regroupent plusieurs

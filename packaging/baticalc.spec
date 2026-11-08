@@ -13,7 +13,8 @@ WIN = sys.platform == "win32"
 datas = collect_data_files("baticalc", includes=["data/*.json", "web/static/**/*"])
 binaries = []
 hidden = collect_submodules("baticalc") + collect_submodules("uvicorn")
-for pkg in ("ifcopenshell", "pymupdf", "ezdxf", "openpyxl", "xlrd", "multipart", "python_multipart"):
+for pkg in ("ifcopenshell", "pymupdf", "ezdxf", "openpyxl", "xlrd", "multipart", "python_multipart",
+            "rapidocr_onnxruntime", "onnxruntime"):
     try:
         d, b, h = collect_all(pkg)
     except Exception:
@@ -34,7 +35,7 @@ a = Analysis(
     datas=datas,
     hiddenimports=hidden,
     excludes=["matplotlib", "pytest", "IPython", "PyQt5", "PyQt6", "PySide6", "ezdxf.addons.drawing.qtviewer",
-              "onnxruntime", "pandas", "scipy", "torch", "pymupdf4llm", "pymupdf.layout"],
+              "pandas", "scipy", "torch", "pymupdf4llm", "pymupdf.layout"],
     noarchive=False,
 )
 pyz = PYZ(a.pure)

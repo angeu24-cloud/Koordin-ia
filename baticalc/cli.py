@@ -28,6 +28,7 @@ def _add_import_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--planche", help="Planche à traiter si le dessin en contient plusieurs : numéro ou mots du "
                                      "titre (ex. « etage courant »). Voir « baticalc planches ».")
     p.add_argument("--calque-poteaux", help="Calque des poteaux (nom exact ou expression régulière)")
+    p.add_argument("--echelle-px-m", type=float, help="Plan scanné : échelle en pixels par mètre (sinon lue sur les cotes)")
     p.add_argument("--sans-contour", action="store_true",
                    help="Ne pas déduire le contour du plancher des murs (mailles de la trame uniquement)")
     p.add_argument("--tous-niveaux", action="store_true",
@@ -62,6 +63,7 @@ CONFIG_TEMPLATE = {
         "liste_niveaux": None,
         "calque_poteaux": None,
         "echelle": None,
+        "echelle_px_m": None,
         "unites": None,
         "portee_max": 8.0,
         "niveaux": 1,
@@ -227,7 +229,8 @@ def _import_project(args):
     from .importers import import_plan
     from .project import build_project
 
-    drawing = import_plan(args.plan, units=args.unites, scale=args.echelle, page=args.page)
+    drawing = import_plan(args.plan, units=args.unites, scale=args.echelle, page=args.page,
+                          px_per_m=getattr(args, "echelle_px_m", None))
     proj = build_project(
         drawing, overrides=_parse_map(args.affectation, int), heights=_parse_map(args.hauteurs, float),
         levels_spec=[n.strip() for n in args.liste_niveaux.split(",")] if args.liste_niveaux else None,
@@ -391,7 +394,8 @@ def _import_model(args) -> tuple[Building, object | None]:
 
     from .sheets import crop, find_sheets, select_sheet
 
-    drawing = import_plan(args.plan, units=args.unites, scale=args.echelle, page=args.page)
+    drawing = import_plan(args.plan, units=args.unites, scale=args.echelle, page=args.page,
+                          px_per_m=getattr(args, "echelle_px_m", None))
     sheets = find_sheets(drawing)
     if args.planche:
         if not sheets:
@@ -585,7 +589,8 @@ def cmd_planches(args) -> int:
     from .importers import import_plan
     from .sheets import find_sheets
 
-    drawing = import_plan(args.plan, units=args.unites, scale=args.echelle, page=args.page)
+    drawing = import_plan(args.plan, units=args.unites, scale=args.echelle, page=args.page,
+                          px_per_m=getattr(args, "echelle_px_m", None))
     sheets = find_sheets(drawing)
     if not sheets:
         print("Aucune planche (cadre) détectée : le dessin sera traité en entier.")
@@ -602,7 +607,8 @@ def cmd_niveaux(args) -> int:
     from .levels import display_name
     from .project import candidate_resolver, plan_storeys, resolve_candidates
 
-    drawing = import_plan(args.plan, units=args.unites, scale=args.echelle, page=args.page)
+    drawing = import_plan(args.plan, units=args.unites, scale=args.echelle, page=args.page,
+                          px_per_m=getattr(args, "echelle_px_m", None))
     storeys, sheets, notes = plan_storeys(
         drawing, overrides=_parse_map(args.affectation, int), heights=_parse_map(args.hauteurs, float),
         levels_spec=[n.strip() for n in args.liste_niveaux.split(",")] if args.liste_niveaux else None,

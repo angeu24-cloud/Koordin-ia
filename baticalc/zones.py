@@ -120,7 +120,20 @@ class Zone:
 
 BALCONY_SLAB = 4.0  # dalle pleine de balcon ≈ 16 cm × 25 kN/m³ (kN/m²)
 
-PRIORITY = {"ouverture": 0, "escalier": 1, "balcon": 2, "exterieur": 3, "local": 4}
+# surface maximale plausible d'un local sans surface écrite (garde-fou contre les fuites)
+MAX_AREA = [(r"\bW\.?C\b|TOILET|SANIT|DOUCHE|S\.?D\.?B|SALLE D.?EAU|S\.?E\b|LAVERIE|BUANDERIE|PLACARD|DRESSING", 12.0),
+            (r"CUISINE|KITCHEN|OFFICE|CELLIER", 30.0), (r"CHAMBRE|BUREAU|STUDIO", 40.0),
+            (r"DEGAGEMENT|COULOIR|CIRCULATION|HALL|ENTREE|PALIER", 40.0), (r"SEJOUR|SALON|SALLE A MANGER|LIVING", 90.0)]
+
+
+def _max_area(name: str) -> float | None:
+    for rx, a in MAX_AREA:
+        if re.search(rx, name.upper()):
+            return a
+    return None
+
+
+PRIORITY = {"ouverture": 0, "escalier": 1, "balcon": 2, "local": 3, "exterieur": 5}
 
 
 def detect_zones(
@@ -132,6 +145,7 @@ def detect_zones(
     *,
     keep_layers: set[str] | None = None,
     door: float = 0.95,
+    unlabeled: bool = False,
 ) -> tuple[list[dict], list[str]]:
     """Délimite chaque local étiqueté sur la grille `grid` (repère du modèle).
 
@@ -158,13 +172,21 @@ def detect_zones(
     barriers: dict[tuple[bool, int], np.ndarray] = {}
     taken = np.zeros_like(grid.mask)
     labels = read_labels(drawing, catalogue)
-    labels.sort(key=lambda lb: PRIORITY.get(classify(lb.name, catalogue).type, 9))
+    def _order(lb):
+        u = classify(lb.name, catalogue)
+        circ = u.type == "local" and re.search(r"CIRCULATION|HALL|DEGAGEMENT|COULOIR", (u.nom + " " + lb.name).upper())
+        return PRIORITY.get(u.type, 9) + (1 if circ else 0)   # circulations après les pièces qu'elles desservent
+
+    labels.sort(key=_order)
     zones: list[dict] = []
 
-    def fill(j0: int, i0: int, ortho: bool, rad: int, limit: int) -> tuple[np.ndarray | None, bool]:
-        key = (ortho, rad)
+    def fill(j0: int, i0: int, ortho: bool, rad: int, limit: int, inside: bool = False) -> tuple[np.ndarray | None, bool]:
+        key = (ortho, rad, inside)
         if key not in barriers:
-            barriers[key] = _dilate(walls[ortho], rad) if rad else walls[ortho].copy()
+            b = _dilate(walls[ortho], rad) if rad else walls[ortho].copy()
+            if inside:    # local intérieur : ne déborde pas de l'emprise du bâtiment (plans ouverts)
+                b |= ~grid.mask
+            barriers[key] = b
         barrier = barriers[key]
         start = None
         for r in range(0, int(0.8 / res)):
@@ -205,11 +227,17 @@ def detect_zones(
             continue
         ortho = u.type == "ouverture"
         limit = int(2.5 * lb.area / res ** 2) if lb.area else int((25.0 if ortho else 0.25 * nx * ny * res ** 2) / res ** 2)
+        amax = None if lb.area else _max_area(lb.name)
+        if amax:
+            limit = min(limit, int(amax / res ** 2))
         # plusieurs fermetures de portes : on garde la surface la plus proche de celle écrite
         best, best_score = None, None
-        for door_w in (door, 0.5, 0.2):
+        wide = bool(amax or (lb.area and unlabeled))   # ouvertures larges refermées (plans scannés, garde-fou)
+        for door_w in ((door, 1.6, 2.2, 0.5, 0.2) if wide else (door, 0.5, 0.2)):
             rad = int(round(door_w / 2 / res))
             region, leaked = fill(j0, i0, ortho, rad, limit)
+            if (leaked or region is None) and u.type not in ("exterieur", "ouverture") and grid.mask[j0, i0]:
+                region, leaked = fill(j0, i0, ortho, rad, limit, inside=True)
             if leaked or region is None or not region.any():
                 continue
             area = float(region.sum()) * res ** 2
@@ -262,6 +290,35 @@ def detect_zones(
             "g_total": u.g_total, "area": round(area, 2), "area_label": lb.area, "approx": approx,
             "cells": zm.to_dict(), "note": u.note, "x": round(lb.x - ox, 2), "y": round(lb.y - oy, 2),
         })
+    if unlabeled:   # plans scannés : petites pièces fermées sans étiquette lisible → pièce d'eau à confirmer
+        from .slab import _components
+
+        rad = int(round(door / 2 / res))
+        bar = _dilate(walls[False], rad)
+        free = grid.mask & ~bar & ~taken
+        for js, is_ in _components(free):
+            comp = np.zeros_like(grid.mask)
+            comp[js, is_] = True
+            region = _dilate(comp, rad + 1) & ~walls[False] & ~taken & grid.mask
+            area = float(region.sum()) * res ** 2
+            jj, ii = np.nonzero(region)
+            if not len(jj):
+                continue
+            w_, h_ = (ii.max() - ii.min() + 1) * res, (jj.max() - jj.min() + 1) * res
+            if not (1.5 <= area <= 6.5 and min(w_, h_) >= 0.9 and max(w_, h_) <= 4.0):
+                continue
+            name = "SALLE D'EAU (A CONFIRMER)"
+            u = classify(name, catalogue)
+            if u is None:
+                continue
+            taken |= region
+            cx, cy = grid.x0 + (ii.mean() + .5) * res, grid.y0 + (jj.mean() + .5) * res
+            zones.append({"name": name, "usage": u.nom, "type": u.type, "q": u.q, "g_finitions": u.g_finitions,
+                          "g_total": u.g_total, "area": round(area, 2), "area_label": None, "approx": True,
+                          "cells": SlabMask(res, grid.x0, grid.y0, region).to_dict(), "note": u.note,
+                          "x": round(cx, 2), "y": round(cy, 2)})
+            notes.append(f"Pièce sans étiquette lisible de {area:.1f} m² ({cx + ox:.1f} ; {cy + oy:.1f}) : supposée "
+                         "pièce d'eau — à confirmer.")
     return zones, notes
 
 

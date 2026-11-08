@@ -19,7 +19,9 @@ ENV PATH="/opt/libredwg/bin:${PATH}" LD_LIBRARY_PATH="/opt/libredwg/lib" BATICAL
 WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY baticalc ./baticalc
-RUN pip install --no-cache-dir .
+# lecture des plans scannés : OCR hors ligne (OpenCV sans interface graphique)
+RUN pip install --no-cache-dir ".[scan]" \
+    && pip uninstall -y opencv-python && pip install --no-cache-dir opencv-python-headless
 VOLUME /donnees
 EXPOSE 8000
 CMD ["baticalc", "serveur", "--port", "8000", "--hote", "0.0.0.0", "--donnees", "/donnees"]

@@ -175,11 +175,11 @@ function paneplan(el, p) {
   el.innerHTML = `
   <section class="card">
     <h2 style="margin-top:0">Plan de l'architecte</h2>
-    <p class="small muted">DWG, DXF ou PDF vectoriel de l'architecte (un DWG peut contenir toutes les planches), ou maquette <b>IFC</b> exportée de Revit, ArchiCAD, Robot, CYPECAD, Graitec…</p>
+    <p class="small muted">DWG, DXF ou PDF vectoriel de l'architecte (un DWG peut contenir toutes les planches), <b>plan scanné</b> (PDF image, PNG, JPG : échelle lue sur les cotes), ou maquette <b>IFC</b> exportée de Revit, ArchiCAD, Robot, CYPECAD, Graitec…</p>
     ${cfg.projet.plan ? `<p>Plan actuel : <b>${esc(cfg.projet.plan.split("/").pop())}</b></p>` : ""}
     ${canEdit() ? `<div class="drop" id="drop"><p>Déposez le fichier ici ou</p>
       <label class="button" style="display:inline-flex;color:#fff">Choisir un fichier
-      <input type="file" id="file" accept=".dwg,.dxf,.pdf,.ifc" hidden></label></div>` : ""}
+      <input type="file" id="file" accept=".dwg,.dxf,.pdf,.ifc,.png,.jpg,.jpeg,.tif,.tiff" hidden></label></div>` : ""}
     ${jobBanner(p.tache && p.tache.kind === "analyse" ? p.tache : null)}
   </section>
   ${a ? `<section class="card">
