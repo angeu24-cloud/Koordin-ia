@@ -250,7 +250,7 @@ def _erode(mask: np.ndarray, k: int) -> np.ndarray:
     return out
 
 
-def column_boxes(mask: np.ndarray, px_per_m: float) -> list[tuple[int, int, int, int]]:
+def column_boxes(mask: np.ndarray, px_per_m: float, tokens=()) -> list[tuple[int, int, int, int]]:
     """Taches pleines presque carrées de 15 à 60 cm (poteaux noircis), même traversées par des murs."""
     k = max(3, int(round(0.10 * px_per_m)))
     core = _erode(mask, k)
@@ -259,9 +259,13 @@ def column_boxes(mask: np.ndarray, px_per_m: float) -> list[tuple[int, int, int,
         a, b = _runs(core[y], 1)
         if len(a):
             runs[y] = list(zip(a.tolist(), b.tolist()))
-    lo, hi = 0.13 * px_per_m, 0.65 * px_per_m
+    lo, hi = 0.18 * px_per_m, 0.65 * px_per_m       # en deçà : caractères gras des textes
+    tb = [token_box(t) for t in tokens]
     out = []
     for x0, y0, x1, y1 in _components(runs):
+        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+        if any(a - 3 <= cx <= c + 3 and b - 3 <= cy <= d + 3 for a, b, c, d in tb):
+            continue
         x0, y0, x1, y1 = x0 - k // 2, y0 - k // 2, x1 + k // 2, y1 + k // 2
         w, h = x1 - x0, y1 - y0
         if lo <= w <= hi and lo <= h <= hi and max(w, h) / min(w, h) < 1.8:
@@ -451,7 +455,7 @@ def import_raster(path: str | Path, page: int = 1, px_per_m: float | None = None
         a, b = P(x0, y0), P(x1, y1)
         out.segments.append(Segment(a[0], a[1], b[0], b[1], layer="MURS"))
         info.walls_px.append((x0, y0, x1, y1))
-    for x0, y0, x1, y1 in column_boxes(mask, info.px_per_m):
+    for x0, y0, x1, y1 in column_boxes(mask, info.px_per_m, tokens):
         a, b = P(x0, y1), P(x1, y0)
         out.rects.append(Rect(a[0], a[1], b[0], b[1], layer="POTEAUX", filled=True))
     labels = []
