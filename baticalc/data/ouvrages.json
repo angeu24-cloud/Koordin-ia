@@ -982,6 +982,81 @@
         "TUBE PVC EVACUATION",
         "25,6X32"
       ]
+    },
+    {
+      "code": "CO-CHA",
+      "lot": "CHARPENTE",
+      "designation": "Charpente en bois rouge assemblée (fermes, pannes, chevrons)",
+      "unite": "m3",
+      "motifs": [
+        "CHARPENTE EN BOIS ROUGE ASSEMBLEE"
+      ]
+    },
+    {
+      "code": "CO-TRT",
+      "lot": "CHARPENTE",
+      "designation": "Traitement du bois aux fongicides et insecticides",
+      "unite": "m3",
+      "motifs": [
+        "TRAITEMENT DU BOIS AUX FONGICIDES"
+      ]
+    },
+    {
+      "code": "CO-COU",
+      "lot": "COUVERTURE",
+      "designation": "Couverture en bac alu auto-portant 6/10e",
+      "unite": "m2",
+      "motifs": [
+        "COUVERTURE EN BAC ALU AUTO",
+        "6/10"
+      ]
+    },
+    {
+      "code": "CO-FAI",
+      "lot": "COUVERTURE",
+      "designation": "Faîtière alu",
+      "unite": "ml",
+      "motifs": [
+        "TOLES",
+        "FAITIERE ALU"
+      ]
+    },
+    {
+      "code": "CO-RIV",
+      "lot": "COUVERTURE",
+      "designation": "Planche de rive",
+      "unite": "ml",
+      "motifs": [
+        "PLANCHE DE RIVE"
+      ]
+    },
+    {
+      "code": "CO-FPL",
+      "lot": "FAUX PLAFONDS",
+      "designation": "Faux plafond en contreplaqué 5 mm",
+      "unite": "m2",
+      "motifs": [
+        "FAUX- PLAFOND EN CONTREPLAQUE 5MM"
+      ]
+    },
+    {
+      "code": "GO-LON",
+      "lot": "GROS ŒUVRE",
+      "designation": "Béton armé pour longrines",
+      "unite": "m3",
+      "motifs": [
+        "BETON DE SEMELLE",
+        "350 KG"
+      ]
+    },
+    {
+      "code": "GO-CLO",
+      "lot": "GROS ŒUVRE",
+      "designation": "Coffrage des longrines",
+      "unite": "m2",
+      "motifs": [
+        "COFFRAGE DE CHAINAGES ET LONGRINES"
+      ]
     }
   ]
 }

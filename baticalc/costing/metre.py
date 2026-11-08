@@ -59,6 +59,13 @@ def _beam_steel(d, L: float, cover: float) -> float:
     return kg
 
 
+def _slab_perimeter(mask_dict) -> float:
+    from ..slab import SlabMask, outline_segments
+
+    m = SlabMask.from_dict(mask_dict)
+    return float(sum(abs(x1 - x0) + abs(y1 - y0) for x0, y0, x1, y1 in outline_segments(m)))
+
+
 def compute_metre(res: ProjectResult, s: DevisSettings) -> dict[str, Quantity]:
     from ..outputs.report import quantities as steel_families
 
@@ -70,7 +77,8 @@ def compute_metre(res: ProjectResult, s: DevisSettings) -> dict[str, Quantity]:
 
     depth = (res.geotech.depth if res.geotech and res.geotech.depth else None) or s.ancrage
     cover = res.code.cover
-    e = s.epaisseur_plancher if res.loads.floor_type == "corps_creux" else 0.18
+    e = s.epaisseur_plancher if res.loads.floor_type == "corps_creux" else (
+        0.0 if res.loads.floor_type == "charpente" else 0.18)   # chaînages sous charpente : coffrés sur 3 faces
 
     # --- fondations
     base_cols = {r.column_id: r for r in res.columns if r.storey == 1}
@@ -121,6 +129,12 @@ def compute_metre(res: ProjectResult, s: DevisSettings) -> dict[str, Quantity]:
         lbl = f"{r.beam_id} ({r.level}) {d.b:.2f}×{d.h:.2f}×{r.span:.2f}" + (f" × {n} niveaux" if n > 1 else "")
         Q("GO-POU").add(lbl, n * d.b * d.h * r.span)
         Q("GO-CPU").add(lbl, n * (d.b + 2 * max(0.0, d.h - e)) * r.span)
+    for r in res.longrines:
+        d = r.design
+        lbl = f"{r.beam_id} {d.b:.2f}×{d.h:.2f}×{r.span:.2f}"
+        Q("GO-LON").add(lbl, d.b * d.h * r.span)
+        Q("GO-CLO").add(lbl, 2 * d.h * r.span)
+        Q("GO-HA").add(f"Longrine {r.beam_id}", _beam_steel(d, r.span, cover))
     for t in res.transfers:
         d = t.design
         lbl = f"{t.beam_id} ({t.floor}) {d.b:.2f}×{d.h:.2f}×{t.length:.2f}"
@@ -135,7 +149,16 @@ def compute_metre(res: ProjectResult, s: DevisSettings) -> dict[str, Quantity]:
         beams_area = sum(b.b * b.length(cols) for b in plan.beams)
         balc = sum(a for z, a, L, g, qq in sl.balconies)
         net = max(0.0, sl.slab_area - beams_area - balc)
-        if res.loads.floor_type == "corps_creux":
+        if res.loads.floor_type == "charpente" and sl.roof:
+            # toiture légère : charpente bois + couverture (pente ≈ 20° : surface × 1,08)
+            per = _slab_perimeter(plan.slab) if plan.slab else 4 * sl.slab_area ** 0.5
+            Q("CO-COU").add(f"{sl.floor_name} : {sl.slab_area:.1f} m² × 1,08 (pente)", sl.slab_area * 1.08)
+            Q("CO-CHA").add(f"{sl.floor_name} : {sl.slab_area:.1f} m² × 0,025 m³/m²", sl.slab_area * 0.025)
+            Q("CO-TRT").add(f"{sl.floor_name} : bois de charpente", sl.slab_area * 0.025)
+            Q("CO-RIV").add(f"{sl.floor_name} : périmètre de la toiture", per)
+            Q("CO-FAI").add(f"{sl.floor_name} : faîtages ≈ 0,3 × périmètre", 0.3 * per)
+            Q("CO-FPL").add(f"{sl.floor_name} : sous-face (pièces couvertes)", net)
+        elif res.loads.floor_type == "corps_creux":
             Q("GO-HOU").add(f"{sl.floor_name} : {sl.slab_area:.1f} − poutres {beams_area:.1f} − balcons {balc:.1f}",
                             net)
         else:

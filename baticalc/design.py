@@ -129,6 +129,7 @@ class ProjectResult:
     raft: object = None
     foundation_type: str = "superficielles"
     geotech: object = None
+    longrines: list = field(default_factory=list)   # BeamResult des longrines (maçonnerie du niveau bas)
     warnings: list[str] = field(default_factory=list)
 
     @property
@@ -183,6 +184,40 @@ def raft_design(code, base: Building, supports: list, sigma_sol: float, depth: f
     return {"aire": area, "epaisseur": h, "portee": span, "sigma": sigma, "ok": sigma <= sigma_sol + 1e-9,
             "nser": n_ser, "nu": n_u, "mu": mu, "as": as_m, "aciers": _bars_per_meter(as_m),
             "ancrage": depth, "notes": notes}
+
+
+def _longrines(res, base, ls, code, supports):
+    """Longrines sous les murs du niveau bas (même tracé que les poutres du plan bas) : maçonnerie +
+    poids propre, poutre continue (moments forfaitaires 0,8 M0 en travée, 0,5 M0 sur appui),
+    réactions ajoutées aux semelles."""
+    cols = base.column_map()
+    extra: dict[str, list[float]] = {}
+    w_g = ls.ground_wall_load + 25 * ls.longrine_b * ls.longrine_h
+    for b in base.beams:
+        L = b.length(cols)
+        if L < 0.3:
+            continue
+        m0 = code.elu(w_g * L ** 2 / 8, 0.0)
+        vu = 1.15 * code.elu(w_g * L / 2, 0.0)
+        d = code.beam(ls.longrine_b, ls.longrine_h, 0.8 * m0, 0.5 * m0, vu)
+        bw, bh = ls.longrine_b, ls.longrine_h
+        while (not d.ok or d.as_comp > 0) and bh < 0.80 - 1e-9:
+            bh = round(bh + 0.05, 2)
+            d = code.beam(bw, bh, 0.8 * m0, 0.5 * m0, vu)
+        d.notes.append(f"Longrine sous maçonnerie : {ls.ground_wall_load:.2f} kN/m + poids propre")
+        res.longrines.append(BeamResult(f"L-{b.id}", "longrines", L, 8 * m0 / L ** 2, m0, d, 0))
+        for cid in (b.start, b.end):
+            e = extra.setdefault(cid, [0.0, 0.0])
+            e[0] += code.els(w_g * L / 2, 0.0)
+            e[1] += code.elu(w_g * L / 2, 0.0)
+    out = []
+    for cid, x, y, nser, nu, a, bb, wall in supports:
+        e = extra.get(cid, [0.0, 0.0])
+        out.append((cid, x, y, nser + e[0], nu + e[1], a, bb, wall))
+    tot = sum(e[0] for e in extra.values())
+    res.warnings.append(f"Longrines : maçonnerie du niveau bas ({ls.ground_wall_load:.2f} kN/m) reportée sur les semelles "
+                        f"({tot:.0f} kN ELS au total).")
+    return out
 
 
 def run(model, ls: LoadSettings, code, sigma_sol: float | None = None, max_column: float = 1.0,
@@ -366,6 +401,8 @@ def run(model, ls: LoadSettings, code, sigma_sol: float | None = None, max_colum
         supports.append((c.id, c.x, c.y, r.nser, r.nu, r.design.b, r.design.h, False))
     for ws in td.wall_supports:
         supports.append((ws.column_id, ws.x, ws.y, code.els(ws.g, ws.q), code.elu(ws.g, ws.q), 0.20, 0.20, True))
+    if ls.ground_wall_load > 0:
+        supports = _longrines(res, base, ls, code, supports)
 
     if ftype == "pieux":
         q_pile = float(geotech.charge_pieu.value) if geotech and geotech.charge_pieu else None

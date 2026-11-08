@@ -344,6 +344,28 @@ Principales options de `calculer` (`baticalc calculer -h` pour la liste complèt
 | `--hauteurs` | coupes | Hauteurs imposées : `"RDC=3.29"` |
 | `--liste-niveaux` | coupes | Niveaux si les coupes n'en donnent pas : `"RDC,ETAGE 1,ETAGE 2,TERRASSE"` |
 
+## Ossature proposée et toiture légère (villas, plans sans poteaux)
+
+Quand le plan d'architecte ne dessine pas la structure (cas courant des villas), BatiCalc propose
+l'ossature à partir des axes des murs :
+
+```python
+from baticalc.ossature import structure_from_walls
+bld = structure_from_walls(murs, max_span=4.5, col=(0.20, 0.20), beam=(0.20, 0.30), footprint=toiture)
+```
+
+- **Poteaux** : aux angles, aux croisements et aux extrémités des murs, plus des poteaux
+  intermédiaires si la portée dépasse `max_span`, alignés si possible sur les files existantes.
+  Les murs voisins décalés de quelques centimètres sont ramenés sur le même axe.
+- **Chaînages** : sur tous les murs, entre poteaux consécutifs.
+- **Toiture légère** (charpente et tôles) : configuration `charges.plancher = "charpente"`,
+  `g_plancher` = poids de la couverture (≈ 0,40 kN/m²), `g_terrasse` = 0. La charge est répartie sur
+  les chaînages. Le métré compte la charpente, la couverture, les rives, les faîtages et le faux
+  plafond, sans dalle ni étanchéité.
+- **Longrines** : `charges.longrines` = poids de la maçonnerie du rez-de-chaussée (kN/m). Les
+  longrines (20×35 par défaut) sont dimensionnées sous tous les murs, et leurs réactions sont
+  ajoutées aux semelles.
+
 ## Plans scannés (PDF image, PNG, JPG, TIFF)
 
 Un plan d'architecte scanné ou photographié bien à plat se lit comme un DWG :

@@ -71,7 +71,9 @@ CONFIG_TEMPLATE = {
     },
     "reglement": {"norme": "bael", "fc": 25.0, "fe": 400.0, "enrobage": 0.03},
     "charges": {
-        "_aide": "kN/m² ; plancher : corps_creux ou dalle_pleine ; facade en kN/m sur poutres de rive",
+        "_aide": ("kN/m² ; plancher : corps_creux ou dalle_pleine ; facade en kN/m sur poutres de rive ; longrines : "
+                  "maçonnerie du niveau bas portée par des longrines (kN/m), 0 sans longrines. Toiture légère "
+                  "(charpente + tôles) : plancher dalle_pleine, g_plancher = poids de la couverture, g_terrasse = 0"),
         "plancher": "corps_creux",
         "g_plancher": 2.85,
         "g_revetement": 2.0,
@@ -79,6 +81,7 @@ CONFIG_TEMPLATE = {
         "g_terrasse": 1.5,
         "q_terrasse": 1.0,
         "facade": 0.0,
+        "longrines": 0.0,
         "degression": True,
     },
     "sol": {"_aide": ("geotech : geotech.json produit par « baticalc geotech rapport.pdf » (à valider) ; "
@@ -490,7 +493,7 @@ def cmd_calculer(args) -> int:
         floor_type=args.plancher,
         g_floor=args.g_plancher, g_finishes=args.g_revetement, q_floor=args.q,
         g_roof_extra=args.g_terrasse, q_roof=args.q_terrasse, facade_load=args.facade,
-        degression=not args.sans_degression,
+        degression=not args.sans_degression, ground_wall_load=getattr(args, "longrines", 0.0) or 0.0,
     )
     code = get_code(args.norme, fc=args.fc, fy=args.fe, cover=args.enrobage)
     if args.nom:
@@ -512,7 +515,11 @@ def cmd_calculer(args) -> int:
         bld = proj.storeys[0].plan
         if proj.n > 1:
             files.append(plan_coffrage(res, out / "plan_coffrage_etage_courant.dxf", "courant", 2))
-        files.append(plan_coffrage(res, out / "plan_coffrage_terrasse.dxf", "terrasse", proj.n))
+        if ls.floor_type == "charpente":
+            files.append(plan_coffrage(res, out / "plan_chainage_haut.dxf", "terrasse", proj.n,
+                                       title="PLAN DES POTEAUX ET DU CHAÎNAGE HAUT (sous charpente)"))
+        else:
+            files.append(plan_coffrage(res, out / "plan_coffrage_terrasse.dxf", "terrasse", proj.n))
         if drawing is not None:
             files.append(plan_controle(bld, drawing, out / "controle_modele.dxf"))
     else:
@@ -558,6 +565,9 @@ def cmd_calculer(args) -> int:
                      "section_cm": f"{r.design.b * 100:.0f}x{r.design.h * 100:.0f}",
                      "inf": str(r.design.bars_bottom), "sup": str(r.design.bars_top),
                      "cadres": str(r.design.stirrups), "ok": r.design.ok} for r in res.beams],
+        "longrines": [{"id": r.beam_id, "portee_m": round(r.span, 2), "section_cm": f"{r.design.b * 100:.0f}x{r.design.h * 100:.0f}",
+                       "inf": str(r.design.bars_bottom), "sup": str(r.design.bars_top), "cadres": str(r.design.stirrups),
+                       "ok": r.design.ok} for r in res.longrines],
         "fondations": res.foundation_type,
         "radier": res.raft,
         "pieux": res.piles,
@@ -669,13 +679,15 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--fc", type=float, help="Résistance du béton fc28 / fck (MPa) — défaut 25")
     c.add_argument("--fe", type=float, help="Limite élastique de l'acier fe / fyk (MPa) — BAEL 400, EC2 500")
     c.add_argument("--enrobage", type=float, default=0.03, help="Enrobage (m)")
-    c.add_argument("--plancher", default="corps_creux", choices=["corps_creux", "dalle_pleine"])
+    c.add_argument("--plancher", default="corps_creux", choices=["corps_creux", "dalle_pleine", "charpente"])
     c.add_argument("--g-plancher", type=float, default=2.85, help="Poids propre plancher (kN/m²) — 16+4 : 2,85")
     c.add_argument("--g-revetement", type=float, default=2.00, help="Revêtements + cloisons (kN/m²)")
     c.add_argument("--q", type=float, default=1.50, help="Exploitation étage courant (kN/m²)")
     c.add_argument("--g-terrasse", type=float, default=1.50, help="Étanchéité + forme de pente (kN/m²)")
     c.add_argument("--q-terrasse", type=float, default=1.00, help="Exploitation terrasse (kN/m²)")
     c.add_argument("--facade", type=float, default=0.0, help="Maçonnerie sur poutres de rive (kN/m)")
+    c.add_argument("--longrines", type=float, default=0.0,
+                   help="Maçonnerie du niveau bas portée par des longrines (kN/m) ; 0 : pas de longrines")
     c.add_argument("--sans-degression", action="store_true", help="Ne pas appliquer la dégression de Q")
     c.add_argument("--sol", type=float, default=None,
                    help="Contrainte admissible du sol (MPa) ; sinon celle du rapport géotechnique, sinon 0,20")

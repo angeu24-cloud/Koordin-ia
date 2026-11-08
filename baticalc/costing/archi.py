@@ -146,7 +146,8 @@ def archi_metre(res, s) -> dict[str, Quantity]:
         Q("SO-FAI").add(f"{name} : périmètre des pièces d'eau × 2,10 m", times * faience)
         # --- plafonds (sous-face du plancher haut) et peintures
         ceil = td.storeys[k].slab_area if k < len(td.storeys) else floor_area
-        Q("EN-PLA").add(f"{name} : sous-face du plancher haut", times * ceil)
+        if not (res.loads.floor_type == "charpente" and k == len(proj.storeys) - 1):   # faux plafond sous charpente
+            Q("EN-PLA").add(f"{name} : sous-face du plancher haut", times * ceil)
         Q("PE-INT").add(f"{name} : murs enduits + plafonds", times * (enduit_int + ceil))
         Q("PE-EXT").add(f"{name} : façades", times * enduit_ext)
         # --- menuiseries
@@ -165,7 +166,7 @@ def archi_metre(res, s) -> dict[str, Quantity]:
             else:
                 Q("ME-PIN").add(lbl + f" × {HEIGHTS['porte']:.2f}", times * w * HEIGHTS["porte"])
     # --- étanchéité de la terrasse
-    if td.storeys:
+    if td.storeys and res.loads.floor_type != "charpente":
         roof = td.storeys[-1]
         plan = proj.storeys[-1].plan
         per = _perimeter(plan.slab) if plan.slab else 0.0

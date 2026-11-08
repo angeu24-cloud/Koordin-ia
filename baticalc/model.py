@@ -56,6 +56,9 @@ class LoadSettings:
     degression: bool = True               # loi de dégression des charges d'exploitation
     continuity: bool = True               # majoration 10 % / 15 % des poteaux voisins de rive
     transfer_max_span: float = 12.0       # portée maximale d'une poutre de transfert automatique (m)
+    ground_wall_load: float = 0.0         # maçonnerie du niveau bas portée par les longrines (kN/m) ; 0 : pas de longrines
+    longrine_b: float = 0.20              # section des longrines (m)
+    longrine_h: float = 0.35
 
 
 @dataclass

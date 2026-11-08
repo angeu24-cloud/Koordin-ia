@@ -90,7 +90,12 @@ def build_html(res: ProjectResult, mep=None) -> str:
     else:
         out.append(f"<li>Bâtiment : {proj.n} étages ({', '.join(st.name for st in proj.storeys)}) + terrasse ; "
                    "longueur de flambement lf = 0,7·l0</li>")
-    out.append(f"<li>Plancher : {'corps creux (porteur dans un sens)' if ls.floor_type == 'corps_creux' else 'dalle pleine'}</li>")
+    ftxt = {"corps_creux": "corps creux (porteur dans un sens)", "dalle_pleine": "dalle pleine",
+            "charpente": "toiture légère : charpente bois et couverture tôle sur chaînages (répartition sur tous les murs)"}
+    out.append(f"<li>Plancher haut : {ftxt.get(ls.floor_type, ls.floor_type)}</li>")
+    if ls.ground_wall_load:
+        out.append(f"<li>Maçonnerie du rez-de-chaussée portée par des longrines {ls.longrine_b * 100:.0f}×"
+                   f"{ls.longrine_h * 100:.0f} : {ls.ground_wall_load:.2f} kN/m</li>")
     out.append(f"<li>Contrainte admissible du sol (ELS) : σsol = {_f(res.sigma_sol, 3)} MPa"
                f"{' (rapport géotechnique)' if res.geotech and res.geotech.sigma_sol == res.sigma_sol else ''}</li></ul>")
     geo = res.geotech
@@ -264,6 +269,19 @@ def build_html(res: ProjectResult, mep=None) -> str:
         out.append("<ul>" + "".join(f"<li class='warn'>{i} ({lv}) : {e(n)}</li>" for i, lv, n in notes) + "</ul>")
     out.append("<p class='small'>Moments : méthode forfaitaire simplifiée — Mt = 0,85·M0 (travée de rive) / "
                "0,75·M0 (intermédiaire) ; Ma = 0,2·M0 (rive), 0,6·M0 (2 travées), 0,5/0,4·M0 (≥ 3 travées).</p>")
+
+    if res.longrines:
+        out.append("<h2>6 bis. Longrines (maçonnerie du rez-de-chaussée)</h2>")
+        out.append("<table><tr><th>Longrine</th><th>Section (cm)</th><th>L (m)</th><th>pu (kN/m)</th><th>M0 (kN.m)</th>"
+                   "<th>A trav. (cm²)</th><th>Inf.</th><th>A app. (cm²)</th><th>Sup.</th><th>Cadres</th><th>État</th></tr>")
+        for r in res.longrines:
+            d = r.design
+            out.append(f"<tr><td>{r.beam_id}</td><td>{d.b * 100:.0f}×{d.h * 100:.0f}</td><td>{_f(r.span, 2)}</td>"
+                       f"<td>{_f(r.pu_m)}</td><td>{_f(r.m0)}</td><td>{_f(d.as_span, 2)}</td><td>{d.bars_bottom or '—'}</td>"
+                       f"<td>{_f(d.as_support, 2)}</td><td>{d.bars_top or '—'}</td><td>{d.stirrups or '—'}</td>"
+                       f"<td>{'OK' if d.ok else '<span class=ko>NON</span>'}</td></tr>")
+        out.append("</table><p class='small'>Charge : maçonnerie + poids propre ; Mt = 0,8·M0, Ma = 0,5·M0 ; réactions "
+                   "ajoutées aux charges des semelles.</p>")
 
     if res.foundation_type == "pieux":
         out.append("<h2>7. Fondations profondes — charges en tête de pieux</h2>")
