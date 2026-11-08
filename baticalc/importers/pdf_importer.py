@@ -20,6 +20,35 @@ class PdfImportError(RuntimeError):
     pass
 
 
+STANDARD_SCALES = (20, 25, 50, 75, 100, 125, 150, 200, 250, 500)
+
+
+def scale_from_dimension_texts(page) -> float | None:
+    """Échelle du plan (1/N) d'après les chaînes de cotes : textes de cotes et positions exactes du PDF."""
+    from .raster_importer import scale_from_dimensions
+
+    tokens = []
+    for blk in page.get_text("dict")["blocks"]:
+        for line in blk.get("lines", []):
+            dx, dy = line["dir"]
+            vert = abs(dy) > 0.9
+            if not vert and abs(dx) < 0.9:
+                continue
+            for sp in line["spans"]:
+                t = sp["text"].strip()
+                if not t:
+                    continue
+                x0, y0, x1, y1 = sp["bbox"]
+                w, h = x1 - x0, y1 - y0
+                tokens.append(((x0 + x1) / 2, (y0 + y1) / 2, t, 1.0, vert, h if vert else w, w if vert else h))
+    pts_per_m = scale_from_dimensions(tokens)
+    if not pts_per_m:
+        return None
+    n = 1000.0 / (PT_TO_MM * pts_per_m)
+    std = min(STANDARD_SCALES, key=lambda v: abs(v - n) / v)
+    return float(std) if abs(std - n) / std < 0.04 else round(n, 1)
+
+
 def detect_scale(text: str) -> int | None:
     """Cherche une échelle du type « Ech : 1/100 » ou « 1:50 » dans le cartouche."""
     candidates = [int(m.group(1)) for m in _SCALE_RE.finditer(text)]
@@ -39,11 +68,16 @@ def import_pdf(path: str | Path, scale: int | None = None, page_number: int = 1)
     page_text = page.get_text()
     if scale is None:
         scale = detect_scale(page_text)
-        if scale is None:
-            raise PdfImportError(
-                "Échelle du plan introuvable dans le PDF. Précisez-la avec --echelle (ex. --echelle 100 pour 1/100)."
-            )
-        out.warnings.append(f"Échelle détectée dans le cartouche : 1/{scale} (à vérifier).")
+        if scale is not None:
+            out.warnings.append(f"Échelle détectée dans le cartouche : 1/{scale} (à vérifier).")
+        else:
+            scale = scale_from_dimension_texts(page)
+            if scale is None:
+                raise PdfImportError(
+                    "Échelle du plan introuvable dans le PDF (ni « Éch. 1/100 » écrit, ni chaîne de cotes lisible). "
+                    "Indiquez-la dans « Plan & niveaux › Échelle d'un PDF » (100 pour 1/100), ou --echelle 100."
+                )
+            out.warnings.append(f"Échelle déduite des cotes : 1/{scale:g} (à vérifier).")
 
     k = PT_TO_MM * scale / 1000.0  # points PDF -> mètres réels
     H = page.rect.height

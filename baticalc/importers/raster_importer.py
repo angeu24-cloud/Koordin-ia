@@ -325,6 +325,10 @@ def _split_numbers(tok) -> list[tuple[float, float, int]]:
     """Nombres d'un texte de cote, avec leur position estimée le long du texte."""
     x, y, txt, conf, vert, w = tok[:6]
     s = txt.strip()
+    dec = re.fullmatch(r"(\d{1,2})[.,](\d{1,2})", s)      # cote en mètres : « 3,15 » → 315 cm
+    if dec:
+        v = int(dec.group(1)) * 100 + int(dec.group(2).ljust(2, "0"))
+        return [(x, y, v)] if 20 <= v <= 3000 else []
     parts = [(m.start(), m.end(), int(m.group())) for m in NUM_RE.finditer(s)]
     if not parts or not w:
         return []
