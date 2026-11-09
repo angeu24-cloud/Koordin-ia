@@ -21,7 +21,8 @@ def structure_from_walls(walls: list[tuple[float, float, float, float]], *, max_
                          beam: tuple[float, float] = (0.20, 0.30), footprint: list[tuple] | None = None,
                          res: float = 0.10, extra_columns: list[tuple[float, float]] = (),
                          avoid: list[tuple[float, float, float, float]] = (),
-                         axes: tuple[list[float], list[float]] = ([], []), long_span: float = 7.5) -> Building:
+                         axes: tuple[list[float], list[float]] = ([], []), long_span: float = 7.5,
+                         min_free: float = 2.0, min_dist: float = 0.6) -> Building:
     """`walls` : axes orthogonaux (x0, y0, x1, y1) en m ; `footprint` : rectangles (x0, y0, x1, y1)
     couverts par le plancher ou la toiture (sinon enveloppe des murs) ; `avoid` : baies (segments sur
     les axes des murs) où l'on ne place pas de poteau intermédiaire ; `axes` : files du plan (x, y) sur
@@ -50,9 +51,10 @@ def structure_from_walls(walls: list[tuple[float, float, float, float]], *, max_
         W = [(k, a, b, snap[c]) if k == kind else (k, a, b, c) for k, a, b, c in W]
     # 1) nœuds : extrémités et intersections
     pts: list[tuple[float, float]] = list(extra_columns)
+    free: list[tuple[float, float]] = []          # extrémités de murs (peut-être libres)
     for (k, a, b, c), v in zip(W, virt):
         if not v:
-            pts += [(a, c), (b, c)] if k == "H" else [(c, a), (c, b)]
+            free += [(a, c), (b, c)] if k == "H" else [(c, a), (c, b)]
     for i, (ka, a0, a1, ac) in enumerate(W):
         for j, (kb, b0, b1, bc) in enumerate(W[i + 1:], start=i + 1):
             if ka == kb or (virt[i] and virt[j]):
@@ -62,14 +64,16 @@ def structure_from_walls(walls: list[tuple[float, float, float, float]], *, max_
             if h[0] - merge <= x <= h[1] + merge and v[0] - merge <= y <= v[1] + merge:
                 pts.append((x, y))
     # 2) fusion des nœuds voisins
-    nodes: list[list[float]] = []
-    for x, y in pts:
+    nodes: list[list] = []
+    for (x, y), fixed in [(p, True) for p in pts] + [(p, False) for p in free]:
         for n in nodes:
             if abs(n[0] - x) <= merge and abs(n[1] - y) <= merge:
                 n[2].append((x, y))
+                n[3] = n[3] or fixed
                 break
         else:
-            nodes.append([x, y, [(x, y)]])
+            nodes.append([x, y, [(x, y)], fixed])
+    fixed_flag = [n[3] for n in nodes]
     nodes = [[float(np.mean([p[0] for p in n[2]])), float(np.mean([p[1] for p in n[2]]))] for n in nodes]
 
     for n in nodes:   # recalage exact sur les axes des murs porteurs du nœud
@@ -80,10 +84,29 @@ def structure_from_walls(walls: list[tuple[float, float, float, float]], *, max_
         if vs:
             n[0] = min(vs, key=lambda v: abs(v - n[0]))
 
-    def on_wall(n, w):
+    def on_wall(n, w, perp=merge):
         k, a, b, c = w
-        return (abs(n[1] - c) <= merge and a - merge <= n[0] <= b + merge) if k == "H" else \
-            (abs(n[0] - c) <= merge and a - merge <= n[1] <= b + merge)
+        return (abs(n[1] - c) <= perp and a - merge <= n[0] <= b + merge) if k == "H" else \
+            (abs(n[0] - c) <= perp and a - merge <= n[1] <= b + merge)
+
+    # extrémité libre d'un mur : poteau seulement à plus de `min_free` du dernier appui sur ce mur
+    # (pas de poteau au bout d'un trumeau ou d'un retour de cloison)
+    keep = []
+    for i, n in enumerate(nodes):
+        if fixed_flag[i]:
+            keep.append(True)
+            continue
+        ok = False
+        for w in W:
+            if not on_wall(n, w):
+                continue
+            k = w[0]
+            pos = n[0] if k == "H" else n[1]
+            others = [(m[0] if k == "H" else m[1]) for j, m in enumerate(nodes) if fixed_flag[j] and on_wall(m, w)]
+            d = min((abs(o - pos) for o in others), default=w[2] - w[1])
+            ok = ok or d >= min_free
+        keep.append(ok)
+    nodes = [n for n, kp in zip(nodes, keep) if kp]
 
     # 3) poteaux intermédiaires sur les longues portées, alignés si possible sur les files existantes
     for w, v in zip(W, virt):
@@ -106,6 +129,21 @@ def structure_from_walls(walls: list[tuple[float, float, float, float]], *, max_
                 t = _off_openings(t, w, avoid, lo=cur + 1.0, hi=min(cur + max_span, pb - 1.0))
                 nodes.append([t, w[3]] if k == "H" else [w[3], t])
                 cur = t
+    # 3 bis) poteaux trop proches (< min_dist) : on garde celui qui porte le plus de murs
+    def degree(n):
+        return sum(on_wall(n, w, 0.12) for w in W)
+    merged = True
+    while merged:
+        merged = False
+        for i in range(len(nodes)):
+            for j in range(i + 1, len(nodes)):
+                if math.hypot(nodes[i][0] - nodes[j][0], nodes[i][1] - nodes[j][1]) < min_dist:
+                    drop = j if degree(nodes[i]) >= degree(nodes[j]) else i
+                    del nodes[drop]
+                    merged = True
+                    break
+            if merged:
+                break
     # 4) poteaux et poutres
     order = sorted(range(len(nodes)), key=lambda i: (-round(nodes[i][1], 1), nodes[i][0]))
     ids = {i: f"P{n + 1}" for n, i in enumerate(order)}
@@ -114,7 +152,8 @@ def structure_from_walls(walls: list[tuple[float, float, float, float]], *, max_
     seen = set()
     for w in W:
         k = w[0]
-        along = sorted(((nodes[i][0] if k == "H" else nodes[i][1]), i) for i in range(len(nodes)) if on_wall(nodes[i], w))
+        along = sorted(((nodes[i][0] if k == "H" else nodes[i][1]), i) for i in range(len(nodes))
+                       if on_wall(nodes[i], w, 0.12))      # poteaux alignés sur le mur : pas de poutre biaise
         for (pa, ia), (pb, ib) in zip(along, along[1:]):
             key = tuple(sorted((ia, ib)))
             if key in seen or pb - pa < 0.3:

@@ -46,6 +46,7 @@ class Panel:
 
 @dataclass
 class LoadSettings:
+    """Charges et types de planchers ; `light_roof` : toiture en charpente au dernier niveau."""
     floor_type: str = "corps_creux"       # "corps_creux" (porteur 1 sens) ou "dalle_pleine" (2 sens)
     g_floor: float = 2.85                 # poids propre plancher (kN/m²) — 16+4 par défaut
     g_finishes: float = 2.00              # revêtements + cloisons (kN/m²)
@@ -56,9 +57,14 @@ class LoadSettings:
     degression: bool = True               # loi de dégression des charges d'exploitation
     continuity: bool = True               # majoration 10 % / 15 % des poteaux voisins de rive
     transfer_max_span: float = 12.0       # portée maximale d'une poutre de transfert automatique (m)
+    roof_type: str = ""                   # dernier plancher : "" (comme les étages), "terrasse" ou "charpente"
     ground_wall_load: float = 0.0         # maçonnerie du niveau bas portée par les longrines (kN/m) ; 0 : pas de longrines
     longrine_b: float = 0.20              # section des longrines (m)
     longrine_h: float = 0.35
+
+    @property
+    def light_roof(self) -> bool:
+        return (self.roof_type or self.floor_type) == "charpente"
 
 
 @dataclass

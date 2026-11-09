@@ -23,9 +23,22 @@ def _norm(s: str) -> str:
 ROOF_NAMES = ("TERRASSE", "TOITURE")
 
 
+ELEV_RE = re.compile(r"([±+\-]|^|\s)\s*(\d{1,3})[,.](\d{2,3})\b")
+
+
+def level_elevation(text: str) -> float | None:
+    """Cote écrite dans l'étiquette (« +3,200 », « ±0,00 », « -1.50 ») en m, sinon None."""
+    m = re.search(r"([±+\-])\s*(\d{1,3})[,.](\d{2,3})\b", text)
+    if not m:
+        return None
+    v = float(f"{m.group(2)}.{m.group(3)}")
+    return -v if m.group(1) == "-" else v
+
+
 def canonical_level(text: str) -> str | None:
     """« Etage 1 » → « ETAGE 1 », « R.D.C » → « RDC », « Rez-de-jardin » → « RDJ »…"""
-    t = _norm(text).replace(".", "").replace("-", " ")
+    t = _norm(re.sub(ELEV_RE, " ", text)).replace(".", "").replace("-", " ").strip()
+    t = re.sub(r"^0 (?=RDC|REZ)", "", t)          # « 0 Rez-de-chaussée » (étiquettes Revit)
     if re.fullmatch(r"(RDJ|REZ DE JARDIN)", t):
         return "RDJ"
     if re.fullmatch(r"(SOUS SOL|SS|SOUS SOL \d|SS\d)", t):
@@ -72,22 +85,26 @@ def read_elevations(drawing: Drawing, sheets: list[Sheet]) -> tuple[list[LevelIn
     """
     notes: list[str] = []
     gaps: dict[tuple[str, str], list[float]] = {}
-    for sh in sheets:
-        if sh.is_plan:
-            continue
-        sub = crop(drawing, sh.bbox)
-        labels = [(t.x, t.y, canonical_level(t.text)) for t in sub.texts]
+    def inside(t, b):
+        return b[0] <= t.x <= b[2] and b[1] <= t.y <= b[3]
+
+    sources = [crop(drawing, sh.bbox).texts for sh in sheets if not sh.is_plan]
+    # coupes et façades hors cadre (dessins sans planches pour elles)
+    sources.append([t for t in drawing.texts if not any(inside(t, sh.bbox) for sh in sheets)])
+    for texts in sources:
+        labels = [(t.x, t.y, canonical_level(t.text), level_elevation(t.text)) for t in texts]
         labels = [lb for lb in labels if lb[2]]
-        groups: dict[int, list[tuple[float, str]]] = {}
-        for x, y, n in labels:
-            groups.setdefault(round(x / 0.5), []).append((y, n))
+        groups: dict[int, list[tuple[float, str, float | None]]] = {}
+        for x, y, n, z in labels:
+            groups.setdefault(round(x / 0.5), []).append((y, n, z))
         for g in groups.values():
-            names = {n for _, n in g}
+            names = {n for _, n, _ in g}
             if len(names) < 3:
                 continue
             by_name: dict[str, float] = {}
-            for y, n in g:
-                by_name.setdefault(n, y)
+            written = all(z is not None for _, _, z in g)   # cotes écrites : plus sûres que l'espacement
+            for y, n, z in g:
+                by_name.setdefault(n, z if written else y)
             seq = sorted(by_name.items(), key=lambda kv: kv[1])
             for (n1, y1), (n2, y2) in zip(seq, seq[1:]):
                 if level_order_key(n2) > level_order_key(n1):
@@ -144,6 +161,8 @@ def sheet_levels(title: str) -> tuple[list[str], bool]:
         found.append(f"ETAGE {int(n)}")
     if "TERRASSE" in t or "TOITURE" in t:
         found.append("TERRASSE")
+    if re.search(r"\bETAGES?\b", t) and not any(f.startswith("ETAGE") for f in found):
+        courant = True          # « PLAN COTE ETAGE » sans numéro : étage(s) courant(s)
     return list(dict.fromkeys(found)), courant
 
 

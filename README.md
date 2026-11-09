@@ -380,6 +380,9 @@ bld = structure_from_walls(murs, max_span=4.5, col=(0.20, 0.20), beam=(0.20, 0.3
   `g_plancher` = poids de la couverture (≈ 0,40 kN/m²), `g_terrasse` = 0. La charge est répartie sur
   les chaînages. Le métré compte la charpente, la couverture, les rives, les faîtages et le faux
   plafond, sans dalle ni étanchéité.
+- **Toiture en charpente sur étages en dalle** (duplex) : `charges.toiture = "charpente"` (ou
+  `--toiture charpente`) ; `g_terrasse` = poids de la couverture, de la charpente et du faux plafond
+  (≈ 0,60 kN/m²). Les planchers intermédiaires restent en corps creux ou dalle pleine.
 - **Longrines** : `charges.longrines` = poids de la maçonnerie du rez-de-chaussée (kN/m). Les
   longrines (20×35 par défaut) sont dimensionnées sous tous les murs, et leurs réactions sont
   ajoutées aux semelles.
@@ -401,6 +404,14 @@ les poutres proposés, ainsi que les poteaux du niveau inférieur (pointillés) 
 La structure enregistrée (`modele_edite.json`) remplace la lecture des plans pour les calculs suivants ;
 un nouveau plan l'annule. Les nouveaux poteaux placés au droit d'un poteau d'un niveau voisin en prennent
 le repère. API : `GET/PUT/DELETE /api/projets/{id}/structure`, `POST /api/projets/{id}/structure/proposer`.
+
+Lecture des dessins d'architecte (Revit, ArchiCAD, AutoCAD) :
+- étiquettes de niveaux au format Revit (« ±0,000 0 Rez-de-chaussée », « +3,200 1 Étage ») : les cotes
+  écrites priment sur l'espacement des étiquettes (souvent hors échelle), coupes hors cadre comprises ;
+- dessins sans cadres : planches découpées d'après les espaces vides et nommées par le titre placé
+  sous chaque vue (« PLAN COTE RDC », « FACADE PRINCIPALE »…) ;
+- titre « PLAN … ETAGE » sans numéro : étage courant ; plusieurs versions d'un même plan : on retient
+  celle rangée à côté des autres niveaux.
 
 ## Plusieurs fichiers de plans
 

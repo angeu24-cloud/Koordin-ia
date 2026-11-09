@@ -333,7 +333,9 @@ def compute_project(proj, ls: LoadSettings) -> TakedownResult:
     res = TakedownResult()
     res.surface_g_floor = ls.g_floor + ls.g_finishes
     res.surface_q_floor = ls.q_floor
-    res.surface_g_roof = ls.g_floor + ls.g_roof_extra
+    # toiture en charpente sur étages en dalle : seul le poids de la couverture (g_terrasse)
+    res.surface_g_roof = ls.g_roof_extra if ls.roof_type == "charpente" and ls.floor_type != "charpente" \
+        else ls.g_floor + ls.g_roof_extra
     res.surface_q_roof = ls.q_roof
     N = proj.n
     cache: dict[int, tuple] = {}
@@ -351,7 +353,8 @@ def compute_project(proj, ls: LoadSettings) -> TakedownResult:
             else:
                 eff, g_w, q_w, sels = cell_loads(mask, zone_objects(plan), g_def, q_def, ls.g_floor, roof)
                 emask = SlabMask(mask.res, mask.x0, mask.y0, eff)
-                parts = distribute(plan, emask, ls.floor_type, weights=[g_w, q_w, np.ones(len(g_w))])
+                ftype = "charpente" if roof and ls.light_roof else ls.floor_type
+                parts = distribute(plan, emask, ftype, weights=[g_w, q_w, np.ones(len(g_w))])
                 area = emask.area
                 cx, cy = emask.centers()
                 for z, sel in sels:

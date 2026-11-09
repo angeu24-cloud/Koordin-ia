@@ -93,6 +93,9 @@ def build_html(res: ProjectResult, mep=None) -> str:
     ftxt = {"corps_creux": "corps creux (porteur dans un sens)", "dalle_pleine": "dalle pleine",
             "charpente": "toiture légère : charpente bois et couverture tôle sur chaînages (répartition sur tous les murs)"}
     out.append(f"<li>Plancher haut : {ftxt.get(ls.floor_type, ls.floor_type)}</li>")
+    if ls.roof_type and ls.roof_type != ls.floor_type:
+        out.append(f"<li>Toiture (dernier niveau) : {ftxt.get(ls.roof_type, 'dalle en terrasse')} — "
+                   f"G = {ls.g_roof_extra:.2f} kN/m², Q = {ls.q_roof:.2f} kN/m²</li>")
     if ls.ground_wall_load:
         out.append(f"<li>Maçonnerie du rez-de-chaussée portée par des longrines {ls.longrine_b * 100:.0f}×"
                    f"{ls.longrine_h * 100:.0f} : {ls.ground_wall_load:.2f} kN/m</li>")

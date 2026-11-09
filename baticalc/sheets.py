@@ -46,6 +46,8 @@ def find_sheets(drawing: Drawing, min_size: float = 8.0) -> list[Sheet]:
         return a.x0 - tol <= b.x0 and a.y0 - tol <= b.y0 and b.x1 <= a.x1 + tol and b.y1 <= a.y1 + tol
 
     frames: list[Rect] = []
+    if not big:
+        return sheets_from_titles(drawing)
     for r in big:
         # cadre double/triple : on garde le plus extérieur
         if any(contains(f, r) and area(f) < 1.3 * area(r) for f in frames):
@@ -91,6 +93,82 @@ def find_sheets(drawing: Drawing, min_size: float = 8.0) -> list[Sheet]:
         title = re.sub(r"\s+", " ", cands[0]).strip() if cands else f"Planche {k}"
         sheets.append(Sheet(k, (f.x0, f.y0, f.x1, f.y1), title))
     return sheets
+
+
+HEADING_RE = re.compile(r"^(VUE EN )?PLAN\b|^FACADES?\b|^COUPES?\b|^PLAN DE MASSE|^TOITURE|^FONDATION", re.IGNORECASE)
+
+
+def sheets_from_titles(drawing: Drawing, gap: float = 3.0, max_cells: int = 1500) -> list[Sheet]:
+    """Dessin sans cadres : groupes de traits séparés par plus de `gap` m de vide, chacun nommé par
+    le titre (« PLAN COTE RDC », « FACADE PRINCIPALE »…) écrit sous lui ou dedans."""
+    import numpy as np
+
+    from .slab import _dilate
+
+    segs = drawing.segments
+    titles = [t for t in drawing.texts if HEADING_RE.search(_norm(t.text)) and len(t.text) < 60]
+    if not segs or not titles:
+        return []
+    xs = np.array([v for sg in segs for v in (sg.x0, sg.x1)] + [v for r in drawing.rects for v in (r.x0, r.x1)])
+    ys = np.array([v for sg in segs for v in (sg.y0, sg.y1)] + [v for r in drawing.rects for v in (r.y0, r.y1)])
+    x0, y0 = float(np.percentile(xs, 0.5)) - gap, float(np.percentile(ys, 0.5)) - gap
+    x1, y1 = float(np.percentile(xs, 99.5)) + gap, float(np.percentile(ys, 99.5)) + gap
+    cell = max(gap / 4, (x1 - x0) / max_cells, (y1 - y0) / max_cells)
+    nx, ny = int((x1 - x0) / cell) + 1, int((y1 - y0) / cell) + 1
+    occ = np.zeros((ny, nx), dtype=bool)
+    lines = [(sg.x0, sg.y0, sg.x1, sg.y1) for sg in segs] + \
+        [ln for r in drawing.rects for ln in ((r.x0, r.y0, r.x1, r.y0), (r.x1, r.y0, r.x1, r.y1),
+                                              (r.x1, r.y1, r.x0, r.y1), (r.x0, r.y1, r.x0, r.y0))]
+    for a, b, c, d in lines:
+        n = int(max(abs(c - a), abs(d - b)) / cell) + 2
+        if n > 4 * max(nx, ny):
+            continue                      # trait démesuré (ligne de construction)
+        t = np.linspace(0, 1, n)
+        i = ((b + t * (d - b) - y0) / cell).astype(int)
+        j = ((a + t * (c - a) - x0) / cell).astype(int)
+        ok = (i >= 0) & (i < ny) & (j >= 0) & (j < nx)
+        occ[i[ok], j[ok]] = True
+    grown = _dilate(occ, max(1, int(round(gap / 2 / cell))))
+    from collections import deque
+
+    lab = np.zeros(grown.shape, dtype=np.int32)
+    boxes: list[list[float]] = []
+    for si, sj in zip(*np.nonzero(grown)):
+        if lab[si, sj]:
+            continue
+        k = len(boxes) + 1
+        lab[si, sj] = k
+        q = deque([(si, sj)])
+        b = [sj, si, sj, si, 0]
+        while q:
+            i, j = q.popleft()
+            b = [min(b[0], j), min(b[1], i), max(b[2], j), max(b[3], i), b[4] + int(occ[i, j])]
+            for u, v in ((i + 1, j), (i - 1, j), (i, j + 1), (i, j - 1)):
+                if 0 <= u < ny and 0 <= v < nx and grown[u, v] and not lab[u, v]:
+                    lab[u, v] = k
+                    q.append((u, v))
+        boxes.append(b)
+    groups = [(x0 + b[0] * cell, y0 + b[1] * cell, x0 + (b[2] + 1) * cell, y0 + (b[3] + 1) * cell, b[4])
+              for b in boxes]
+    groups = [g for g in groups if g[2] - g[0] >= 3 and g[3] - g[1] >= 3 and g[4] >= 20]
+    found: dict[int, tuple[float, str]] = {}
+    for t in titles:
+        best = None
+        for gi, (gx0, gy0, gx1, gy1, _) in enumerate(groups):
+            if not (gx0 - gap <= t.x <= gx1 + gap):
+                continue
+            if gy0 <= t.y <= gy1:
+                d = 0.5          # titre dans le groupe
+            elif t.y < gy0:
+                d = gy0 - t.y    # titre sous le dessin (usage courant)
+            else:
+                d = 2 * (t.y - gy1)
+            if d <= 3 * gap + 0.05 * (gy1 - gy0) and (best is None or d < best[0]):
+                best = (d, gi)
+        if best and (best[1] not in found or best[0] < found[best[1]][0]):
+            found[best[1]] = (best[0], re.sub(r"\s+", " ", t.text).strip())
+    order = sorted(found, key=lambda gi: (round(-groups[gi][1] / 10), groups[gi][0]))
+    return [Sheet(k, tuple(groups[gi][:4]), found[gi][1]) for k, gi in enumerate(order, start=1)]
 
 
 def select_sheet(sheets: list[Sheet], query: str) -> Sheet:

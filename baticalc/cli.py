@@ -83,6 +83,7 @@ CONFIG_TEMPLATE = {
                   "maçonnerie du niveau bas portée par des longrines (kN/m), 0 sans longrines. Toiture légère "
                   "(charpente + tôles) : plancher dalle_pleine, g_plancher = poids de la couverture, g_terrasse = 0"),
         "plancher": "corps_creux",
+        "toiture": "",
         "g_plancher": 2.85,
         "g_revetement": 2.0,
         "q": 1.5,
@@ -504,7 +505,7 @@ def cmd_calculer(args) -> int:
         return 1
 
     ls = LoadSettings(
-        floor_type=args.plancher,
+        floor_type=args.plancher, roof_type=getattr(args, "toiture", "") or "",
         g_floor=args.g_plancher, g_finishes=args.g_revetement, q_floor=args.q,
         g_roof_extra=args.g_terrasse, q_roof=args.q_terrasse, facade_load=args.facade,
         degression=not args.sans_degression, ground_wall_load=getattr(args, "longrines", 0.0) or 0.0,
@@ -529,7 +530,7 @@ def cmd_calculer(args) -> int:
         bld = proj.storeys[0].plan
         if proj.n > 1:
             files.append(plan_coffrage(res, out / "plan_coffrage_etage_courant.dxf", "courant", 2))
-        if ls.floor_type == "charpente":
+        if ls.light_roof:
             files.append(plan_coffrage(res, out / "plan_chainage_haut.dxf", "terrasse", proj.n,
                                        title="PLAN DES POTEAUX ET DU CHAÎNAGE HAUT (sous charpente)"))
         else:
@@ -694,6 +695,9 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--fe", type=float, help="Limite élastique de l'acier fe / fyk (MPa) — BAEL 400, EC2 500")
     c.add_argument("--enrobage", type=float, default=0.03, help="Enrobage (m)")
     c.add_argument("--plancher", default="corps_creux", choices=["corps_creux", "dalle_pleine", "charpente"])
+    c.add_argument("--toiture", default="", choices=["", "terrasse", "charpente"],
+                   help="Dernier niveau : terrasse (dalle, défaut) ou charpente (couverture légère, "
+                        "poids g_terrasse) sur des étages en dalle")
     c.add_argument("--g-plancher", type=float, default=2.85, help="Poids propre plancher (kN/m²) — 16+4 : 2,85")
     c.add_argument("--g-revetement", type=float, default=2.00, help="Revêtements + cloisons (kN/m²)")
     c.add_argument("--q", type=float, default=1.50, help="Exploitation étage courant (kN/m²)")

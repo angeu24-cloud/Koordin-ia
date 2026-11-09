@@ -163,7 +163,7 @@ def export_ifc(res: ProjectResult, path: str | Path) -> Path:
             w.quantities(el, "Qto_BeamBaseQuantities", {"Length": ("L", L), "NetVolume": ("V", b["b"] * b["h"] * L)})
             contained.append(el)
         rects = _rects(proj.storeys[k].plan.slab, step=0.10)  # résolution exacte du modèle
-        if res.loads.floor_type == "charpente" and k == len(data["niveaux"]) - 1:
+        if res.loads.light_roof and k == len(data["niveaux"]) - 1:
             rects = []   # toiture légère : pas de dalle
         if rects:
             lv = dict(lv, dalle=rects)

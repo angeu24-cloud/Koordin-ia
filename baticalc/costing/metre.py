@@ -149,7 +149,7 @@ def compute_metre(res: ProjectResult, s: DevisSettings) -> dict[str, Quantity]:
         beams_area = sum(b.b * b.length(cols) for b in plan.beams)
         balc = sum(a for z, a, L, g, qq in sl.balconies)
         net = max(0.0, sl.slab_area - beams_area - balc)
-        if res.loads.floor_type == "charpente" and sl.roof:
+        if res.loads.light_roof and sl.roof:
             # toiture légère : charpente bois + couverture (pente ≈ 20° : surface × 1,08)
             per = _slab_perimeter(plan.slab) if plan.slab else 4 * sl.slab_area ** 0.5
             Q("CO-COU").add(f"{sl.floor_name} : {sl.slab_area:.1f} m² × 1,08 (pente)", sl.slab_area * 1.08)

@@ -116,3 +116,47 @@ def test_duplex_without_columns(tmp_path):
             assert ids[(round(c.x, 2), round(c.y, 2))] == c.id
     res = run(proj, LoadSettings(), get_code("bael"), sigma_sol=0.15)
     assert len(res.footings) == len(rdc.plan.columns) and res.beams and res.columns
+
+
+def test_revit_level_labels_and_written_elevations():
+    from baticalc.levels import canonical_level, level_elevation, sheet_levels
+
+    assert canonical_level("±0,000\n0 Rez-de-chaussée") == "RDC"
+    assert canonical_level("+3,200\n1 Étage") == "ETAGE 1"
+    assert level_elevation("+3,200\n1 Étage") == 3.2 and level_elevation("RDC") is None
+    assert sheet_levels("PLAN COTE ETAGE") == ([], True)       # étage sans numéro : étage courant
+
+
+def test_sheets_without_frames_named_by_titles(tmp_path):
+    from baticalc.sheets import find_sheets
+
+    doc = ezdxf.new("R2010", setup=True)
+    doc.header["$INSUNITS"] = 6
+    msp = doc.modelspace()
+    for ox, title in ((0, "PLAN COTE RDC"), (30, "PLAN COTE ETAGE"), (60, "FACADE PRINCIPALE")):
+        for k in range(12):
+            msp.add_line((ox + k, 0), (ox + k, 10))
+        msp.add_line((ox, 0), (ox + 11, 0))
+        msp.add_text(title, dxfattribs={"insert": (ox + 3, -2), "height": 0.4})
+    doc.saveas(tmp_path / "p.dxf")
+    sheets = find_sheets(import_plan(str(tmp_path / "p.dxf")))
+    assert [s.title for s in sheets] == ["PLAN COTE RDC", "PLAN COTE ETAGE", "FACADE PRINCIPALE"]
+    assert [s.is_plan for s in sheets] == [True, True, False]
+
+
+def test_free_wall_ends():
+    walls = [(0, 0, 8, 0), (0, 6, 8, 6), (0, 0, 0, 6), (8, 0, 8, 6),
+             (3, 0, 3, 1.2),     # retour de 1,2 m (trumeau) : pas de poteau au bout
+             (5, 6, 5, 3)]       # refend de 3 m : poteau au bout
+    b = structure_from_walls(walls, max_span=4.5)
+    assert not any(abs(c.x - 3) < 0.05 and abs(c.y - 1.2) < 0.05 for c in b.columns)
+    assert any(abs(c.x - 5) < 0.05 and abs(c.y - 3) < 0.05 for c in b.columns)
+
+
+def test_light_roof_over_slab(tmp_path):
+    proj = build_project(import_plan(write_duplex(tmp_path / "duplex.dxf")))
+    dalle = run(proj, LoadSettings(), get_code("bael"), sigma_sol=0.2)
+    charp = run(proj, LoadSettings(roof_type="charpente", g_roof_extra=0.6), get_code("bael"), sigma_sol=0.2)
+    assert charp.loads.light_roof and not dalle.loads.light_roof
+    assert charp.takedown.surface_g_roof == 0.6
+    assert sum(f.design.nser for f in charp.footings) < sum(f.design.nser for f in dalle.footings)

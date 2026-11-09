@@ -165,6 +165,7 @@ def build_project(
     ref_sheet = storeys[-1].sheet
     sub_of(ref_sheet)
     ref_c = centers[ref_sheet.index]
+    wall_sets: dict[int, list] = {}
     if propose is None:
         propose = len(ref_c) < 4 or any(len(centers[sp.sheet.index]) < 4 for sp in storeys if sub_of(sp.sheet))
     if propose:
@@ -176,6 +177,9 @@ def build_project(
             o = pre.origin or [0.0, 0.0]
             centers[sh.index] = np.array([[c.x + o[0], c.y + o[1]] for c in pre.columns]) \
                 if pre.columns else np.zeros((0, 2))
+            ctx = getattr(pre, "_prop", None)
+            if ctx:
+                wall_sets[sh.index] = [[w[0] + o[0], w[1] + o[1], w[2] + o[0], w[3] + o[1]] for w in ctx["walls"]]
         ref_c = centers[ref_sheet.index]
         proj.warnings.append("Planches sans poteaux dessinés : ossature proposée d'après les murs, "
                              "poteaux superposés d'un niveau à l'autre — à valider dans l'onglet « Structure ».")
@@ -191,10 +195,15 @@ def build_project(
         if sh.index == ref_sheet.index:
             t, m = np.zeros(2), len(ref_c)
         else:
-            t, m = align_points(ref_c, centers[sh.index])
-            ratio = m / max(1, min(len(ref_c), len(centers[sh.index])))
-            proj.warnings.append(f"Calage « {sh.title} » sur « {ref_sheet.title} » : {m} poteaux superposés "
-                                 f"({ratio:.0%}).")
+            if ref_sheet.index in wall_sets and sh.index in wall_sets:
+                t, ratio = align_walls(wall_sets[ref_sheet.index], wall_sets[sh.index])
+                proj.warnings.append(f"Calage « {sh.title} » sur « {ref_sheet.title} » : {ratio:.0%} des murs "
+                                     "sur les mêmes axes.")
+            else:
+                t, m = align_points(ref_c, centers[sh.index])
+                ratio = m / max(1, min(len(ref_c), len(centers[sh.index])))
+                proj.warnings.append(f"Calage « {sh.title} » sur « {ref_sheet.title} » : {m} poteaux superposés "
+                                     f"({ratio:.0%}).")
             if ratio < 0.3:
                 proj.warnings.append(f"Calage peu fiable pour « {sh.title} » : vérifier le plan de contrôle.")
         models[sh.index] = build_model(sub, origin=(o_ref[0] + t[0], o_ref[1] + t[1]),
@@ -228,8 +237,11 @@ def build_project(
     for k, sp in enumerate(storeys):
         base = models[sp.sheet.index]
         plan = copy.deepcopy(base)
-        for c in plan.columns:
-            c.id = global_id(c.x, c.y)
+        if k in frames:
+            plan.columns, plan.beams = copy.deepcopy(frames[k])
+        else:
+            for c in plan.columns:
+                c.id = global_id(c.x, c.y)
         upper = models[storeys[k + 1].sheet.index] if k + 1 < len(storeys) else base
         plan.footprint = base.slab
         plan.slab = upper.slab
@@ -246,8 +258,12 @@ def build_project(
         plan.warnings = [w for w in base.warnings if not w.startswith("Portée")]
         mask = SlabMask.from_dict(plan.slab) if plan.slab else None
         if k in frames:
-            plan.columns, plan.beams = copy.deepcopy(frames[k])
-            ids = {c.id: global_id(c.x, c.y) for c in plan.columns}
+            ids: dict[str, str] = {}
+            for c in plan.columns:       # repère global, unique dans l'étage
+                g = global_id(c.x, c.y)
+                if g in ids.values():
+                    g = f"{g}b"
+                ids[c.id] = g
             for c in plan.columns:
                 c.id = ids[c.id]
             for n, b in enumerate(plan.beams, start=1):
@@ -268,6 +284,36 @@ def build_project(
                 )
         proj.storeys.append(Storey(display_name(sp.name), sp.height, plan, sh_title(sp)))
     return proj
+
+
+def align_walls(ref: list, other: list, tol: float = 0.06) -> tuple[np.ndarray, float]:
+    """Translation t (other ≈ ref + t) qui superpose au mieux les axes de murs de deux planches :
+    vote pondéré par les longueurs, séparément en x (murs verticaux) et en y (murs horizontaux)."""
+    def fam(ws, horiz):
+        out = []
+        for w in ws:
+            h = abs(w[2] - w[0]) >= abs(w[3] - w[1])
+            if h == horiz:
+                out.append(((w[1] + w[3]) / 2 if h else (w[0] + w[2]) / 2, abs(w[2] - w[0]) + abs(w[3] - w[1])))
+        return out
+
+    t, scores = np.zeros(2), []
+    for axis, horiz in ((0, False), (1, True)):
+        a, b = fam(ref, horiz), fam(other, horiz)
+        if not a or not b:
+            continue
+        cands = {round((pb - pa) / 0.02) * 0.02 for pa, _ in a for pb, _ in b}
+        best, best_s = 0.0, -1.0
+        for d in cands:
+            sc = sum(min(la, lb) for pa, la in a for pb, lb in b if abs(pa + d - pb) <= tol)
+            if sc > best_s:
+                best, best_s = d, sc
+        diffs = [(pb - pa - best, min(la, lb)) for pa, la in a for pb, lb in b if abs(pa + best - pb) <= tol]
+        if diffs:
+            best += sum(d * w for d, w in diffs) / sum(w for _, w in diffs)
+        t[axis] = best
+        scores.append(best_s / max(1e-9, min(sum(la for _, la in a), sum(lb for _, lb in b))))
+    return t, (min(scores) if scores else 0.0)
 
 
 def _on_walls(x: float, y: float, walls, tol: float = 0.30) -> bool:
@@ -297,6 +343,31 @@ def _crossings(walls_a, walls_b, tol: float = 0.30) -> list[tuple[float, float]]
     return out
 
 
+def _unify_files(frames: list[tuple], tol: float = 0.30) -> None:
+    """Files de poteaux distantes de moins de `tol` (sur tous les niveaux donnés, le premier faisant
+    foi) ramenées sur une seule : tous les poteaux d'une file bougent ensemble, les poutres restent
+    droites et les poteaux superposés coïncident."""
+    for attr in ("x", "y"):
+        vals: list[tuple[float, int]] = sorted({(round(getattr(c, attr), 3), lvl) for lvl, (cols, _) in enumerate(frames)
+                                                for c in cols})
+        groups: list[list[tuple[float, int]]] = []
+        for v in vals:
+            if groups and v[0] - groups[-1][0][0] <= tol:
+                groups[-1].append(v)
+            else:
+                groups.append([v])
+        target = {}
+        for g in groups:
+            low = min(lv for _, lv in g)
+            ref = [v for v, lv in g if lv == low]
+            rep = max(set(ref), key=ref.count) if len(set(ref)) == 1 else sum(ref) / len(ref)
+            for v, _ in g:
+                target[v] = rep
+        for cols, _ in frames:
+            for c in cols:
+                setattr(c, attr, round(target.get(round(getattr(c, attr), 3), getattr(c, attr)), 3))
+
+
 def _vertical_continuity(storeys, models) -> tuple[dict[int, tuple], list[str]]:
     """Ossatures proposées, du dernier niveau vers le bas : chaque poteau de l'étage supérieur descend
     s'il tombe sur un mur (ou près d'un poteau) de l'étage inférieur ; poutres sous les murs de l'étage
@@ -322,15 +393,9 @@ def _vertical_continuity(storeys, models) -> tuple[dict[int, tuple], list[str]]:
         extra += _crossings(up_walls, walls_k)
         carried = SlabMask.from_dict(upper.slab) if upper.slab else None
         _apply_proposal(m, extra_columns=extra, carried=carried, upper_walls=up_walls)
-        pairs = sorted(((math.hypot(u.x - c.x, u.y - c.y), i, j) for i, c in enumerate(m.columns)
-                        for j, u in enumerate(up_cols) if abs(u.x - c.x) <= 0.6 and abs(u.y - c.y) <= 0.6))
-        done_c, done_u = set(), set()
-        for d, i, j in pairs:    # alignement exact sur le poteau du dessus (un pour un)
-            if d <= 0.6 and i not in done_c and j not in done_u:
-                m.columns[i].x, m.columns[i].y = up_cols[j].x, up_cols[j].y
-                done_c.add(i)
-                done_u.add(j)
-        born = [c for c in up_cols if not any(math.hypot(d.x - c.x, d.y - c.y) < 0.05 for d in m.columns)]
+        frames[k] = (m.columns, m.beams)
+        _unify_files([frames[j] for j in range(k, n)])
+        born = [c for c in up_cols if not any(math.hypot(d.x - c.x, d.y - c.y) < 0.10 for d in m.columns)]
         if born:
             notes.append(f"{display_name(storeys[k + 1].name)} : {len(born)} poteau(x) naissant(s) sans mur dessous "
                          f"(portés par une poutre de {display_name(storeys[k].name)}) — à vérifier.")
@@ -354,11 +419,18 @@ def resolve_candidates(storeys: list[StoreyPlan], sheets: list[Sheet], sub_of, c
             continue
         sub_of(ref)
         best, best_score = sp.sheet, -1.0
-        for c in cands:
+
+        def near(c) -> float:   # planche voisine de la référence, sur la même rangée : même jeu de plans
+            same_row = min(c.bbox[3], ref.bbox[3]) - max(c.bbox[1], ref.bbox[1]) > 0.5 * (ref.bbox[3] - ref.bbox[1])
+            dx = abs((c.bbox[0] + c.bbox[2]) - (ref.bbox[0] + ref.bbox[2])) / 2
+            return (0.0 if same_row else 1e6) + dx
+        for c in sorted(cands, key=near):
             sub_of(c)
             _, m = align_points(centers[ref.index], centers[c.index])
-            score = m / max(1, len(centers[c.index]))  # part des poteaux de la planche qui se superposent
-            if score > best_score:
+            n = len(centers[c.index])
+            # part des poteaux de la planche qui se superposent (peu fiable avec moins de 4 poteaux)
+            score = m / max(1, n) if n >= 4 else 0.0
+            if score > best_score + 1e-9:
                 best, best_score = c, score
         sp.sheet, sp.reason = best, f"la mieux superposée à « {ref.title} »"
         notes.append(f"{display_name(sp.name)} : planche « {best.title} » retenue parmi "
