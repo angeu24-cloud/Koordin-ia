@@ -13,6 +13,9 @@ Dimensionnement de bâtiments en **béton armé** à partir des plans d'architec
 > ⚠️ Outil d'aide au pré-dimensionnement. Les résultats doivent être vérifiés et
 > visés par un ingénieur structure avant exécution.
 
+> 💼 **Gestion des contrats et des salaires** : application séparée dans [`paie/`](paie/README.md)
+> (Koordin Paie — salariés, contrats, avenants, bulletins de paie, livre de paie, Côte d'Ivoire).
+
 ## Ce que fait le programme
 
 ```

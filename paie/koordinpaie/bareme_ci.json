@@ -1,0 +1,45 @@
+{
+  "pays": "Côte d'Ivoire",
+  "devise": "FCFA",
+  "version": "2026",
+  "avertissement": "Taux et plafonds à vérifier auprès de la CNPS et de la DGI avant chaque paie : ils sont modifiables dans Paramètres > Barème.",
+  "smig_mensuel": 75000,
+  "heures_mensuelles": 173.33,
+  "cnps": {
+    "retraite_salarie": 0.063,
+    "retraite_employeur": 0.077,
+    "plafond_retraite": 3375000,
+    "prestations_familiales": 0.05,
+    "maternite": 0.0075,
+    "accident_travail": 0.02,
+    "plafond_autres_branches": 75000
+  },
+  "cmu": {
+    "salarie": 500,
+    "employeur": 500,
+    "par_personne_a_charge": 1000
+  },
+  "its": {
+    "tranches": [
+      [75000, 0.0],
+      [240000, 0.16],
+      [800000, 0.21],
+      [2400000, 0.24],
+      [8000000, 0.28],
+      [null, 0.32]
+    ],
+    "reduction_par_demi_part": 5500,
+    "parts_max": 5
+  },
+  "employeur": {
+    "impot_patronal_local": 0.028,
+    "impot_patronal_expatrie": 0.12,
+    "taxe_apprentissage": 0.004,
+    "formation_continue": 0.012
+  },
+  "transport_non_imposable": 30000,
+  "anciennete": {"debut_annees": 2, "taux_par_an": 0.01, "taux_max": 0.25},
+  "heures_sup": {"hs15": 0.15, "hs50": 0.50, "hs75": 0.75, "hs100": 1.00},
+  "indemnite_fin_cdd": 0.03,
+  "conges_jours_par_mois": 2.2
+}
