@@ -30,7 +30,7 @@ class Sheet:
     @property
     def is_plan(self) -> bool:
         t = _norm(self.title)
-        return "PLAN" in t and not any(k in t for k in ("MASSE", "FACADE", "COUPE", "SITUATION"))
+        return bool(re.search(r"\bPLAN\b", t)) and not any(k in t for k in ("MASSE", "FACADE", "COUPE", "SITUATION"))
 
 
 def find_sheets(drawing: Drawing, min_size: float = 8.0) -> list[Sheet]:
@@ -80,7 +80,8 @@ def find_sheets(drawing: Drawing, min_size: float = 8.0) -> list[Sheet]:
     sheets: list[Sheet] = []
     for k, f in enumerate(frames, start=1):
         texts = [t for t in drawing.texts if f.x0 <= t.x <= f.x1 and f.y0 <= t.y <= f.y1]
-        cands = [t.text for t in texts if TITLE_RE.search(_norm(t.text)) and len(t.text) < 80]
+        own = [t.text for t in texts if t.layer == "CADRE_FICHIER"]   # titre tiré du nom du fichier : prioritaire
+        cands = own or [t.text for t in texts if TITLE_RE.search(_norm(t.text)) and len(t.text) < 80]
         # on privilégie « VUE EN PLAN … » / « PLAN … »
         def rank(txt: str) -> tuple[int, int]:
             t = _norm(txt)

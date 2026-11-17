@@ -54,3 +54,13 @@ def test_no_scale_message(tmp_path):
     doc.save(p)
     with pytest.raises(RuntimeError, match="Échelle d'un PDF"):
         import_plan(p)
+
+
+def test_decimal_scale_and_planche_titles():
+    from baticalc.importers.pdf_importer import detect_scale
+    from baticalc.sheets import Sheet
+
+    assert detect_scale("Echelle : 1:128,26, 1:1") == 128.26      # plan Archicad ajusté à la page
+    assert detect_scale("Ech 1/100") == 100
+    assert not Sheet(1, (0, 0, 1, 1), "Planche 3").is_plan
+    assert Sheet(1, (0, 0, 1, 1), "PLAN RDC").is_plan

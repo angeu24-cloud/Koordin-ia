@@ -80,7 +80,9 @@ def import_plans(paths, *, units: str | None = None, scale: int | None = None, p
         for m in d.marks:
             m.x0, m.x1, m.y0, m.y1 = m.x0 + dx, m.x1 + dx, m.y0 + dy, m.y1 + dy
         w, h = x1 - x0, y1 - y0
-        titled = [sh for sh in find_sheets(d) if not sh.title.startswith("Planche ")]
+        # planches réellement titrées (plan, coupe, façade) ; un tableau de surfaces encadré
+        # (« 1er étage, ESPACE COMMUN ») ne compte pas
+        titled = [sh for sh in find_sheets(d) if sh.is_plan or re.search(r"COUPE|FACADE|FAÇADE", sh.title.upper())]
         if not titled:     # pas de cadre titré : on en ajoute un, avec le nom du fichier comme titre
             m = max(1.0, 0.04 * max(w, h))
             d.rects.append(Rect(x_next - m, -m, x_next + w + m, h + 2.5 * m, layer="CADRE_FICHIER"))

@@ -13,7 +13,8 @@ import pymupdf as fitz
 from ..geometry import Drawing, Rect, Segment, Text, rect_from_points
 
 PT_TO_MM = 25.4 / 72.0
-_SCALE_RE = re.compile(r"(?:ech(?:elle)?|éch(?:elle)?|scale)?\s*[:.]?\s*1\s*[/:]\s*(\d{2,4})", re.IGNORECASE)
+_SCALE_RE = re.compile(r"(?:ech(?:elle)?|éch(?:elle)?|scale)?\s*[:.]?\s*1\s*[/:]\s*(\d{2,4}(?:[.,]\d{1,3})?)(?![\d.,]*\d)",
+                       re.IGNORECASE)
 
 
 class PdfImportError(RuntimeError):
@@ -49,10 +50,12 @@ def scale_from_dimension_texts(page) -> float | None:
     return float(std) if abs(std - n) / std < 0.04 else round(n, 1)
 
 
-def detect_scale(text: str) -> int | None:
-    """Cherche une échelle du type « Ech : 1/100 » ou « 1:50 » dans le cartouche."""
-    candidates = [int(m.group(1)) for m in _SCALE_RE.finditer(text)]
-    candidates = [c for c in candidates if c in (20, 25, 50, 75, 100, 125, 150, 200, 250, 500)]
+def detect_scale(text: str) -> float | None:
+    """Cherche une échelle du type « Ech : 1/100 » ou « 1:50 » dans le cartouche ; accepte aussi les échelles
+    décimales des plans ajustés à la page (Archicad : « 1:128,26 »)."""
+    raw = [float(m.group(1).replace(",", ".")) for m in _SCALE_RE.finditer(text)]
+    candidates = [int(c) if c == int(c) else c for c in raw
+                  if c in (20, 25, 50, 75, 100, 125, 150, 200, 250, 500) or (c != int(c) and 10 <= c <= 1000)]
     if not candidates:
         return None
     return max(set(candidates), key=candidates.count)
@@ -69,7 +72,7 @@ def import_pdf(path: str | Path, scale: int | None = None, page_number: int = 1)
     if scale is None:
         scale = detect_scale(page_text)
         if scale is not None:
-            out.warnings.append(f"Échelle détectée dans le cartouche : 1/{scale} (à vérifier).")
+            out.warnings.append(f"Échelle détectée dans le cartouche : 1/{scale:g} (à vérifier).")
         else:
             scale = scale_from_dimension_texts(page)
             if scale is None:
