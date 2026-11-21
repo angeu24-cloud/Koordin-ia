@@ -380,19 +380,33 @@ def _bars(m, v: View, res: WallResult, sched: dict):
 
 
 # ------------------------------------------------------------------ planches
+def _section_scale(res: WallResult, max_w: float) -> float:
+    """Échelle de la coupe : la plus grande (1/20, 1/25, 1/30…) qui tient sur la feuille."""
+    g, w = res.geometry, res.wall
+    hgt = g["h_base"] + w["height"] + g.get("key_depth", 0.0) + 1.35
+    wid = g["B"] + 1.5
+    for sc in (20, 25, 30, 40, 50, 75, 100):
+        if hgt * 1000 / sc <= 215 and wid * 1000 / sc <= max_w:
+            return float(sc)
+    return 100.0
+
+
 def _sheet_plan(res: WallResult, walls, info, n_sheets) -> ezdxf.document.Drawing:
     doc = _doc()
     m = doc.modelspace()
-    _frame(m, "VUE EN PLAN ET ÉLÉVATIONS", "1/100", 1, n_sheets, info)
     g, w = res.geometry, res.wall
     toe, tb, tt, heel, hb, H = g["toe"], g["t_base"], g["t_top"], g["heel"], g["h_base"], w["height"]
     kd = g.get("key_depth", 0.0)
     B = toe + tb + heel
     fiche = w.get("fiche") or 0.0
-    sc = 100.0
     maxL = max(L for _, L in walls)
-    if maxL * 1000 / sc > 330:
-        sc = 200.0
+    hE0 = hb + H + kd
+    for sc in (100.0, 125.0, 150.0, 200.0, 250.0, 300.0, 500.0):
+        k = 1000 / sc
+        need = sum((B + 0.6) * k + 8 + (hE0 + 0.9) * k + 18 + 12 for _ in walls)
+        if need <= 232 and maxL * k <= 330:
+            break
+    _frame(m, "VUE EN PLAN ET ÉLÉVATIONS", f"1/{sc:g}", 1, n_sheets, info)
     y = A3[1] - MARGIN - 12
     for name, L in walls:
         segs = segments(L)
@@ -456,17 +470,19 @@ def _sheet_plan(res: WallResult, walls, info, n_sheets) -> ezdxf.document.Drawin
 def _sheet_coffrage(res: WallResult, walls, info, n_sheets) -> ezdxf.document.Drawing:
     doc = _doc()
     m = doc.modelspace()
-    _frame(m, "COUPE TYPE A-A — COFFRAGE ET DÉTAILS", "1/25 ; détails 1/10", 2, n_sheets, info)
     g, w = res.geometry, res.wall
     toe, tb, tt, heel, hb, H = g["toe"], g["t_base"], g["t_top"], g["heel"], g["h_base"], w["height"]
     kd = g.get("key_depth", 0.0)
-    v = View(MARGIN + 72, MARGIN + 42 + (kd + 0.65) * 40, 25)
-    _t(m, "COUPE TYPE A-A — COFFRAGE (1/25)", MARGIN + 20, A3[1] - MARGIN - 10, 3.5)
+    sc = _section_scale(res, 150)
+    k = 1000 / sc
+    _frame(m, "COUPE TYPE A-A — COFFRAGE ET DÉTAILS", f"1/{sc:g} ; détails 1/10", 2, n_sheets, info)
+    v = View(MARGIN + 25 + 1.2 * k, MARGIN + 40 + (kd + 0.65) * k, sc)
+    _t(m, f"COUPE TYPE A-A — COFFRAGE (1/{sc:g})", MARGIN + 20, A3[1] - MARGIN - 10, 3.5)
     _section(m, v, res, "coffrage")
     # détail : joint de dilatation (vue en plan du voile, 1/10)
     x0, y0 = 335.0, 232.0
     vd = View(x0, y0, 10)
-    _t(m, "DÉTAIL JOINT DE DILATATION (plan, 1/10)", x0 - 50, y0 + 36, 2.6)
+    _t(m, "DÉTAIL JOINT DE DILATATION (plan, 1/10)", x0 - 50, y0 + tb * 100 + 12, 2.6)
     for sgn in (-1, 1):
         pts = [vd.p(0.01 * sgn, 0), vd.p(0.45 * sgn, 0), vd.p(0.45 * sgn, tb), vd.p(0.01 * sgn, tb)]
         _hatch_solid(m, pts, color=254)
@@ -522,6 +538,9 @@ def _sheet_coffrage(res: WallResult, walls, info, n_sheets) -> ezdxf.document.Dr
         "Joints de dilatation tous les 10 m au plus (voir planche 1).",
         f"Surcharge d'exploitation sur le terre-plein : {w['surcharge']:g} kN/m².",
     ]
+    if w.get("strip_q"):
+        notes.append(f"Bâtiment voisin : {w['strip_q']:g} kN/m² à {w['strip_dist']:g} m du voile, fondé à "
+                     f"{w['strip_depth']:g} m".replace(".", ",") + " (à respecter).")
     yy = 106.0
     for k, n in enumerate(notes):
         _t(m, n, 262, yy - k * 4.3, 2.6 if k == 0 else 2.05)
@@ -531,11 +550,14 @@ def _sheet_coffrage(res: WallResult, walls, info, n_sheets) -> ezdxf.document.Dr
 def _sheet_ferraillage(res: WallResult, walls, info, n_sheets, sched) -> ezdxf.document.Drawing:
     doc = _doc()
     m = doc.modelspace()
-    _frame(m, "COUPE TYPE A-A — FERRAILLAGE ET NOMENCLATURE", "1/25", 3, n_sheets, info)
     g = res.geometry
     kd = g.get("key_depth", 0.0)
-    v = View(MARGIN + 60, MARGIN + 42 + (kd + 0.65) * 40, 25)
-    _t(m, "COUPE TYPE A-A — FERRAILLAGE (1/25)", MARGIN + 20, A3[1] - MARGIN - 10, 3.5)
+    sc = _section_scale(res, 150)
+    k = 1000 / sc
+    _frame(m, "COUPE TYPE A-A — FERRAILLAGE ET NOMENCLATURE", f"1/{sc:g}", 3, n_sheets, info)
+    x0 = max(MARGIN + 27 + 0.75 * k, 190 - (g["B"] + 0.75) * k)
+    v = View(x0, MARGIN + 40 + (kd + 0.65) * k, sc)
+    _t(m, f"COUPE TYPE A-A — FERRAILLAGE (1/{sc:g})", MARGIN + 20, A3[1] - MARGIN - 10, 3.5)
     _section(m, v, res, "ferraillage", sched)
     _t(m, f"Enrobage {res.wall['cover'] * 100:.0f} cm. Recouvrements 50 Ø. Aciers HA Fe E400.",
        MARGIN + 20, MARGIN + 16, 2.2)

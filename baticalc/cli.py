@@ -182,7 +182,8 @@ def cmd_soutenement(args) -> int:
                       soil=Soil(gamma=args.gamma, phi=args.phi), sigma_sol=args.sol, phi_base=args.phi_fondation,
                       fiche=args.fiche, water=args.nappe, t_top=args.epaisseur_tete, t_base=args.epaisseur_pied,
                       h_base=args.semelle, toe=args.patin, heel=args.talon, key_depth=args.beche or 0.0,
-                      key_width=args.largeur_beche)
+                      key_width=args.largeur_beche, strip_q=args.bande or 0.0, strip_dist=args.bande_distance,
+                      strip_depth=args.bande_profondeur)
     res = design_wall(w, code)
     (out / "soutenement.json").write_text(json.dumps(asdict(res), ensure_ascii=False, indent=1), encoding="utf-8")
     (out / "note_soutenement.html").write_text(wall_html(res, code), encoding="utf-8")
@@ -840,6 +841,10 @@ def main(argv: list[str] | None = None) -> int:
     so.add_argument("--talon", type=float, help="Longueur du talon (m)")
     so.add_argument("--beche", type=float, help="Bêche sous le voile : hauteur sous la semelle (m)")
     so.add_argument("--largeur-beche", type=float, default=0.30, help="Largeur de la bêche (m), défaut 0,30")
+    so.add_argument("--bande", type=float, help="Charge en bande derrière le mur, ex. bâtiment voisin (kN/m²)")
+    so.add_argument("--bande-distance", type=float, default=0.0, help="Distance voile → bord de la bande (m)")
+    so.add_argument("--bande-profondeur", type=float, default=0.0,
+                    help="Profondeur d'application de la bande sous le haut du remblai (m), ex. fondations voisines")
     so.add_argument("--plans", nargs="?", const="", help="Plans d'exécution (PDF + DXF) ; murs « Nom:longueur,... », "
                     "ex. \"Mur 1:21,Mur 2:25\" (défaut : un mur de --longueur)")
     so.add_argument("--projet", help="Nom du projet pour le cartouche des plans")

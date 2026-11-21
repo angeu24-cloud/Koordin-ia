@@ -46,6 +46,10 @@ class RetainingWall:
     cover: float = 0.05               # enrobage (parement au contact des terres)
     key_depth: float = 0.0            # bêche sous le voile : hauteur sous la semelle (m), 0 = sans bêche
     key_width: float = 0.30           # largeur de la bêche (m)
+    # charge en bande derrière le mur (bâtiment voisin, stock…) : méthode de diffusion de Caquot-Kérisel
+    strip_q: float = 0.0              # pression de la bande (kN/m²), au niveau de ses fondations
+    strip_dist: float = 0.0           # distance horizontale entre le parement arrière du voile et le bord de la bande (m)
+    strip_depth: float = 0.0          # profondeur d'application sous le haut du remblai (fondations du bâtiment) (m)
 
 
 @dataclass
@@ -68,6 +72,30 @@ def ka_rankine(phi: float, beta: float = 0.0) -> float:
     cb, cp = math.cos(b), math.cos(p)
     root = math.sqrt(max(0.0, cb ** 2 - cp ** 2))
     return cb * (cb - root) / (cb + root)
+
+
+def strip_thrust(w: RetainingWall, a: float, height: float) -> tuple[float, float]:
+    """Poussée d'une charge en bande semi-infinie commençant à la distance a de l'écran (kN/ml, bras depuis le bas).
+
+    Diffusion simplifiée (Caquot-Kérisel) : aucun effet au-dessus de d + a·tan φ, effet total Ka·q sous
+    d + a·tan(π/4 + φ/2), variation linéaire entre les deux (d = profondeur d'application de la charge).
+    """
+    if w.strip_q <= 0:
+        return 0.0, 0.0
+    phi = math.radians(w.soil.phi)
+    ka = ka_rankine(w.soil.phi, w.slope)
+    a = max(0.0, a)
+    z1 = w.strip_depth + a * math.tan(phi)
+    z2 = w.strip_depth + a * math.tan(math.pi / 4 + phi / 2)
+    n = 200
+    F = M = 0.0
+    for i in range(n):
+        z = (i + 0.5) * height / n
+        f = 0.0 if z <= z1 else (1.0 if z >= z2 or z2 <= z1 else (z - z1) / (z2 - z1))
+        dp = ka * w.strip_q * f * height / n
+        F += dp
+        M += dp * (height - z)
+    return F, (M / F if F else 0.0)
 
 
 def predimension(w: RetainingWall) -> dict:
@@ -112,6 +140,7 @@ def _actions(w: RetainingWall, g: dict, with_q_on_heel: bool) -> dict:
         yw = hw / 3
     Pq = ka * w.surcharge * Hv
     yq = Hv / 2
+    Pb, yb = strip_thrust(w, w.strip_dist - heel, Hv)          # bande : écran fictif au bout du talon
     PgH, PgV = Pg * math.cos(beta), Pg * math.sin(beta)
     PqH, PqV = Pq * math.cos(beta), Pq * math.sin(beta)
     # --- poids (bras de levier depuis l'arête avant du patin)
@@ -133,11 +162,11 @@ def _actions(w: RetainingWall, g: dict, with_q_on_heel: bool) -> dict:
     V = W_sem + W_v1 + W_v2 + W_terre + W_toe + W_q + W_key + PgV + PqV - U
     Ms = (W_sem * B / 2 + W_v1 * x_v1 + W_v2 * x_v2 + W_terre * x_terre + W_toe * toe / 2
           + W_q * x_terre + W_key * x_key + (PgV + PqV) * B)
-    Mr = PgH * yg + PqH * yq + Pw * yw + U * B * 2 / 3
+    Mr = PgH * yg + PqH * yq + Pw * yw + U * B * 2 / 3 + Pb * yb
     return {"B": B, "Hv": Hv, "ka": ka, "PgH": PgH, "PqH": PqH, "Pw": Pw, "yg": yg, "yq": yq, "yw": yw,
             "W": {"semelle": W_sem, "voile": W_v1 + W_v2, "terres_talon": W_terre, "terres_patin": W_toe,
                   "surcharge_talon": W_q, "beche": W_key}, "PV": PgV + PqV, "U": U, "V": V, "Ms": Ms, "Mr": Mr,
-            "H_total": PgH + PqH + Pw}
+            "H_total": PgH + PqH + Pw + Pb, "Pb": Pb, "yb": yb}
 
 
 def stability(w: RetainingWall, g: dict) -> dict:
@@ -251,6 +280,9 @@ def reinforcement(w: RetainingWall, g: dict, code, st: dict) -> dict:
     PqH = ka * w.surcharge * H
     Mw = 1.35 * PgH * H / 3 + 1.5 * PqH * H / 2
     Vw = 1.35 * PgH + 1.5 * PqH
+    Pb, yb = strip_thrust(w, w.strip_dist, H)                   # bande : écran = parement arrière du voile
+    Mw += 1.5 * Pb * yb
+    Vw += 1.5 * Pb
     if w.water is not None and w.water < H:
         hw = H - w.water
         Mw += 1.35 * 0.5 * GAMMA_W * hw ** 2 * hw / 3
@@ -259,7 +291,7 @@ def reinforcement(w: RetainingWall, g: dict, code, st: dict) -> dict:
     # --- contraintes sous la semelle à l'ELU (même répartition, majorée par le rapport ELU/ELS)
     b = st["_actions_sol"]
     B = b["B"]
-    ratio = (1.35 * (b["PgH"] + b["Pw"]) + 1.5 * b["PqH"]) / max(b["H_total"], 1e-6)
+    ratio = (1.35 * (b["PgH"] + b["Pw"]) + 1.5 * (b["PqH"] + b["Pb"])) / max(b["H_total"], 1e-6)
     ratio = max(1.35, ratio)
     qmax, qmin = st["_qmax"] * ratio, st["_qmin"] * ratio
     e = st["_e"]
@@ -369,6 +401,7 @@ def design_wall(w: RetainingWall, code) -> WallResult:
         all(ra[k]["ok_cisaillement"] for k in ("voile", "patin", "talon", "beche") if k in ra)
     a = st["_actions"]
     forces = {"poussee_terres_kN_ml": round(a["PgH"], 1), "poussee_surcharge_kN_ml": round(a["PqH"], 1),
+              "poussee_bande_kN_ml": round(a["Pb"], 1),
               "poussee_eau_kN_ml": round(a["Pw"], 1), "sous_pression_kN_ml": round(a["U"], 1),
               "hauteur_ecran_fictif_m": round(a["Hv"], 2), "poids_kN_ml": {k: round(v, 1) for k, v in a["W"].items()},
               "V_kN_ml": round(a["V"], 1), "M_stabilisant_kNm_ml": round(a["Ms"], 1),
@@ -376,6 +409,9 @@ def design_wall(w: RetainingWall, code) -> WallResult:
     stab = {k: v for k, v in st.items() if not k.startswith("_")}
     geom = dict(g, B=round(g["toe"] + g["t_base"] + g["heel"], 2), hauteur_totale=round(w.height + g["h_base"], 2),
                 key_depth=round(max(0.0, w.key_depth), 2), key_width=round(w.key_width, 2) if w.key_depth > 0 else 0.0)
+    if w.strip_q > 0:
+        notes.append(f"Charge en bande {w.strip_q:g} kN/m² à {w.strip_dist:g} m du voile, appliquée à {w.strip_depth:g} m "
+                     f"sous le haut du remblai (fondations voisines) : poussée {a['Pb']:.1f} kN/ml sur l'écran du talon.")
     if w.key_depth > 0:
         notes.append(f"Bêche {w.key_width * 100:.0f} × {w.key_depth * 100:.0f} cm sous le voile, coulée à pleine fouille "
                      f"contre le sol en place : butée comptée à 50 % ({st['glissement']['butee_beche_kN']} kN/ml).")
@@ -448,7 +484,9 @@ def wall_html(res: WallResult, code) -> str:
     f = lambda v, n=2: f"{v:,.{n}f}".replace(",", " ").replace(".", ",")  # noqa: E731
     rows = "".join(f"<tr><td>{k}</td><td>{v}</td></tr>" for k, v in (
         ("Hauteur de terres retenues (voile)", f"{f(w['height'])} m"), ("Longueur du mur", f"{f(w['length'])} m"),
-        ("Surcharge sur le terre-plein", f"{f(w['surcharge'], 1)} kN/m²"), ("Pente du terre-plein β", f"{f(w['slope'], 0)}°"),
+        ("Surcharge sur le terre-plein", f"{f(w['surcharge'], 1)} kN/m²"),
+        ("Charge en bande (bâtiment voisin)", "aucune" if not w.get("strip_q") else
+         f"{f(w['strip_q'], 0)} kN/m² à {f(w['strip_dist'])} m du voile, à {f(w['strip_depth'])} m de profondeur"), ("Pente du terre-plein β", f"{f(w['slope'], 0)}°"),
         ("Remblai : γ / φ", f"{f(w['soil']['gamma'], 1)} kN/m³ / {f(w['soil']['phi'], 0)}°"),
         ("Contrainte admissible du sol (ELS)", f"{f(w['sigma_sol'], 3)} MPa"),
         ("Nappe derrière le mur", "non (mur drainé)" if w["water"] is None else f"à {f(w['water'])} m sous le haut du remblai")))
@@ -496,6 +534,7 @@ Résultat global : {ok(res.ok)}.</p>
 <h2>3. Poussées (Rankine, Ka = {f(res.ka, 3)}, écran fictif de {f(res.forces['hauteur_ecran_fictif_m'])} m)</h2>
 <table><tr><td>Poussée des terres</td><td>{f(res.forces['poussee_terres_kN_ml'], 1)} kN/ml</td></tr>
 <tr><td>Poussée due à la surcharge</td><td>{f(res.forces['poussee_surcharge_kN_ml'], 1)} kN/ml</td></tr>
+<tr><td>Poussée due à la charge en bande (bâtiment voisin)</td><td>{f(res.forces.get('poussee_bande_kN_ml', 0), 1)} kN/ml</td></tr>
 <tr><td>Poussée de l'eau / sous-pression</td><td>{f(res.forces['poussee_eau_kN_ml'], 1)} / {f(res.forces['sous_pression_kN_ml'], 1)} kN/ml</td></tr>
 <tr><td>Effort vertical total / moments stabilisant et renversant</td><td>{f(res.forces['V_kN_ml'], 1)} kN/ml ; {f(res.forces['M_stabilisant_kNm_ml'], 1)} / {f(res.forces['M_renversant_kNm_ml'], 1)} kN·m/ml</td></tr></table>
 <h2>4. Stabilité externe</h2><table><tr><th>Vérification</th><th>Valeur</th><th>Résultat</th></tr>{stab}</table>

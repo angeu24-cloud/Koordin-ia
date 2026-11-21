@@ -164,3 +164,17 @@ def test_cli_key_and_plans(tmp_path):
     rc = main(["soutenement", "--hauteur", "3", "--sol", "0.25", "--beche", "0.4", "--plans", "Mur A:12,Mur B:8",
                "--projet", "Essai", "-o", str(tmp_path)])
     assert rc == 0 and (tmp_path / "plans" / "plans_mur_soutenement.pdf").exists()
+
+
+def test_strip_load_from_neighbouring_building():
+    from baticalc.soutenement import strip_thrust
+
+    c = get_code("bael", cover=0.05)
+    w = RetainingWall(height=4.0, strip_q=80, strip_dist=5.2, strip_depth=1.5)
+    F_far, _ = strip_thrust(w, 5.0, 4.4)
+    F_near, y = strip_thrust(w, 0.5, 4.4)
+    assert 0 < F_far < F_near < 80 / 3 * 4.4 and 0 < y < 4.4
+    base = dict(height=4.0, sigma_sol=0.25, soil=Soil(gamma=20), key_depth=0.5)
+    a = design_wall(RetainingWall(**base), c)
+    b = design_wall(RetainingWall(**base, strip_q=80, strip_dist=2.5, strip_depth=0.5), c)
+    assert b.forces["poussee_bande_kN_ml"] > 5 and b.geometry["B"] > a.geometry["B"] and b.ok
