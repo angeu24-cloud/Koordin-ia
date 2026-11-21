@@ -81,3 +81,47 @@ def test_web_tool(tmp_path):
     j = r.json()
     assert j["resultat"]["ok"] and j["dxf_base64"] and "NOTE DE CALCUL" in j["note_html"]
     assert c.post("/api/outils/soutenement", json={"hauteur": "40"}).status_code == 400
+
+
+# ------------------------------------------------------------------ murs poids en maçonnerie
+def test_gravity_wall_reference():
+    from baticalc.mur_poids import GravityWall, design_gravity
+
+    r = design_gravity(GravityWall(height=2.0, material="moellons", surcharge=10, sigma_sol=0.15, length=30))
+    assert r.ok
+    g = r.geometry
+    assert 0.6 <= g["B"] / 2.0 <= 0.9 and g["b0"] >= 0.40       # largeur en pied ≈ 0,6 à 0,9 H
+    assert all(s["ok"] and abs(s["e_m"]) <= s["limite_e"] for s in r.sections)   # pas de traction dans la maçonnerie
+    assert r.quantities["total"]["maconnerie_m3"] == pytest.approx(30 * 0.5 * (g["b0"] + g["B"]) * 2.0, rel=1e-3)
+
+
+def test_gravity_wall_materials_water_and_imposed_width():
+    from baticalc.mur_poids import GravityWall, design_gravity
+
+    light = design_gravity(GravityWall(height=2.5, material="agglos"))
+    heavy = design_gravity(GravityWall(height=2.5, material="beton_cyclopeen"))
+    assert heavy.geometry["B"] <= light.geometry["B"]          # matériau plus lourd : mur moins large
+    wet = design_gravity(GravityWall(height=2.5, water=1.0))
+    assert wet.geometry["B"] > design_gravity(GravityWall(height=2.5)).geometry["B"] and wet.ok
+    thin = design_gravity(GravityWall(height=2.5, base_width=0.8))
+    assert not thin.ok and any("non satisfaites" in n for n in thin.notes)
+    with pytest.raises(ValueError):
+        design_gravity(GravityWall(height=2.0, material="bois"))
+
+
+def test_gravity_outputs_cli_and_web(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from baticalc.cli import main
+    from baticalc.mur_poids import GravityWall, design_gravity, gravity_dxf, gravity_html
+    from baticalc.web import create_app
+
+    r = design_gravity(GravityWall(height=1.8, length=15))
+    gravity_dxf(r, tmp_path / "c.dxf")
+    assert (tmp_path / "c.dxf").stat().st_size > 1000 and "MUR POIDS" in gravity_html(r)
+    assert main(["soutenement", "--type", "poids", "--hauteur", "1.8", "--materiau", "agglos", "-o", str(tmp_path / "o")]) == 0
+    assert json.loads((tmp_path / "o" / "mur_poids.json").read_text(encoding="utf-8"))["ok"]
+    c = TestClient(create_app(tmp_path / "d", sync_jobs=True))
+    c.post("/api/compte/inscription", json={"email": "a@b.ci", "nom": "A", "mot_de_passe": "motdepasse1"})
+    j = c.post("/api/outils/soutenement", json={"type": "poids", "hauteur": "2", "materiau": "moellons", "semelle": "", "talon": "", "nappe": ""}).json()
+    assert j["type"] == "poids" and j["resultat"]["ok"] and j["dxf_base64"]

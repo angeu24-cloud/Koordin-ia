@@ -439,6 +439,24 @@ baticalc soutenement --hauteur 3.5 --pente 15 --nappe 1.2 --norme ec2 -o mur_clo
 - Dans l'application : accueil › **Outils de calcul › Mur de soutènement** (formulaire, résultats,
   téléchargement de la note et de la coupe). API : `POST /api/outils/soutenement`.
 
+### Murs poids en maçonnerie
+
+```bash
+baticalc soutenement --type poids --hauteur 2 --longueur 30 --materiau moellons --sol 0.15
+baticalc soutenement --type poids --hauteur 1.8 --materiau agglos --largeur-tete 0.40 --sans-semelle
+```
+
+- Section trapézoïdale : parement arrière vertical, fruit sur le parement avant, couronnement en béton,
+  semelle en béton dosé à 250 kg/m³ (0,40 m, débords de 0,20 m ; `--semelle`, `--sans-semelle`).
+- Matériaux (`--materiau`) : `moellons` (22 kN/m³, 1,0 MPa), `agglos` pleins (21 kN/m³, 0,8 MPa),
+  `beton_cyclopeen` (23 kN/m³, 2,0 MPa) ; compression admissible modifiable (`--resistance`).
+- Stabilité externe à la base de la semelle (renversement, glissement, excentricité, sol) et
+  **stabilité interne** de la maçonnerie à H/4, H/2, 3H/4 et en pied : résultante dans le tiers
+  central (pas de traction), σmax ≤ admissible, glissement sur les joints (frottement 0,7, Fs ≥ 1,5).
+- Largeur en pied augmentée jusqu'à satisfaire toutes les vérifications (ou imposée : `--largeur-pied`).
+- Sorties : `note_mur_poids.html`, `coupe_mur_poids.dxf`, `mur_poids.json` (maçonnerie, semelle, propreté,
+  couronnement, fouilles, rejointoiement, enduit bitumineux, drainage).
+
 ## Plusieurs fichiers de plans
 
 Quand l'architecte livre un fichier par niveau, ainsi que les coupes et les façades :

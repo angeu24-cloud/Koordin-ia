@@ -129,18 +129,26 @@ async function viewWall() {
     ["sol", "Contrainte admissible du sol (MPa)", 0.15], ["nappe", "Nappe sous le haut du remblai (m, vide = drainé)", ""],
     ["fiche", "Terre devant le mur (m)", 0], ["epaisseur_tete", "Voile en tête (m)", 0.2],
     ["epaisseur_pied", "Voile en pied (m, vide = calculé)", ""], ["semelle", "Épaisseur de semelle (m, vide = calculée)", ""],
-    ["patin", "Patin (m, vide = calculé)", ""], ["talon", "Talon (m, vide = calculé)", ""]];
+    ["patin", "Patin (m, vide = calculé)", ""], ["talon", "Talon (m, vide = calculé)", ""],
+    ["largeur_tete", "Mur poids : largeur en tête (m, vide = calculée)", ""],
+    ["largeur_pied", "Mur poids : largeur en pied (m, vide = calculée)", ""],
+    ["resistance", "Mur poids : compression admissible (MPa, vide = selon matériau)", ""]];
   $app.innerHTML = `<section class="card"><a href="#/" class="small">← Mes projets</a>
-    <h1>Mur de soutènement en béton armé</h1>
-    <p class="small muted">Mur cantilever (T renversé) : poussée de Rankine, stabilité (renversement, glissement, excentricité, sol),
-      ferraillage du voile, du talon et du patin, métré. Les dimensions laissées vides sont calculées.</p>
+    <h1>Mur de soutènement</h1>
+    <p class="small muted">Mur cantilever en béton armé (ferraillage du voile, du talon et du patin) ou mur poids en maçonnerie
+      (moellons, agglos pleins, béton cyclopéen ; vérification de la maçonnerie à plusieurs niveaux). Poussée de Rankine,
+      stabilité (renversement, glissement, excentricité, sol), métré. Les dimensions laissées vides sont calculées.</p>
     <form id="wf"><div class="row">${F.map(([k, l, v]) => `<div><label>${l}</label><input id="w_${k}" type="number" step="any" value="${v}"></div>`).join("")}
-      <div><label>Règlement</label><select id="w_norme"><option value="bael">BAEL 91</option><option value="ec2">Eurocode 2</option></select></div></div>
+      <div><label>Type de mur</label><select id="w_type"><option value="cantilever">Cantilever en béton armé</option>
+        <option value="poids">Mur poids en maçonnerie</option></select></div>
+      <div><label>Matériau (mur poids)</label><select id="w_materiau"><option value="moellons">Moellons hourdés</option>
+        <option value="agglos">Agglos pleins</option><option value="beton_cyclopeen">Béton cyclopéen</option></select></div>
+      <div><label>Règlement (béton armé)</label><select id="w_norme"><option value="bael">BAEL 91</option><option value="ec2">Eurocode 2</option></select></div></div>
       <div class="actions"><button type="submit">Calculer</button></div></form></section>
     <section id="wres"></section>`;
   document.getElementById("wf").onsubmit = async (e) => {
     e.preventDefault();
-    const body = { norme: w_norme.value };
+    const body = { norme: w_norme.value, type: w_type.value, materiau: w_materiau.value };
     F.forEach(([k]) => { body[k] = document.getElementById("w_" + k).value; });
     const out = document.getElementById("wres");
     out.innerHTML = `<div class="spinner"></div>`;
@@ -148,24 +156,36 @@ async function viewWall() {
       const r = await api("/api/outils/soutenement", { json: body });
       const x = r.resultat, g = x.geometry, st = x.stability, ra = x.reinforcement, q = x.quantities.total;
       const b = (v) => v ? '<span class="badge ok">vérifié</span>' : '<span class="badge ko">non vérifié</span>';
+      const poids = r.type === "poids";
+      const kpis = poids
+        ? `<div class="kpi"><b>${fmt(g.b0, 2)} m</b>largeur en tête</div><div class="kpi"><b>${fmt(g.B, 2)} m</b>largeur en pied</div>
+           <div class="kpi"><b>${fmt(g.semelle_largeur, 2)} m</b>semelle</div><div class="kpi"><b>${fmt(q.maconnerie_m3, 1)} m³</b>maçonnerie</div>
+           <div class="kpi"><b>${fmt(q.semelle_beton_m3, 1)} m³</b>béton de semelle</div>`
+        : `<div class="kpi"><b>${fmt(g.B, 2)} m</b>largeur de semelle</div><div class="kpi"><b>${fmt(g.t_base, 2)} m</b>voile en pied</div>
+           <div class="kpi"><b>${fmt(g.h_base, 2)} m</b>semelle</div><div class="kpi"><b>${fmt(q.beton_m3, 1)} m³</b>béton</div><div class="kpi"><b>${fmt(q.acier_kg, 0)} kg</b>acier</div>`;
+      const detail = poids
+        ? `<table style="margin-top:8px"><tr><th>Maçonnerie</th><th>Largeur</th><th>Excentricité ≤ b/6</th><th>σmax ≤ admissible</th><th></th></tr>
+           ${x.sections.map((s) => `<tr><td>${esc(s.niveau)}</td><td>${fmt(s.largeur, 2)} m</td><td>${fmt(s.e_m, 3)} ≤ ${fmt(s.limite_e, 3)} m</td>
+           <td>${fmt(s.sigma_max_kPa, 0)} ≤ ${fmt(s.f_adm_kPa, 0)} kPa</td><td>${b(s.ok)}</td></tr>`).join("")}</table>`
+        : `<table style="margin-top:8px"><tr><th>Élément</th><th>Aciers principaux</th><th>Répartition</th></tr>
+        <tr><td>Voile (côté terres)</td><td>${esc(ra.voile.barres)}</td><td>${esc(ra.voile.repartition)}</td></tr>
+        <tr><td>Talon (nappe sup.)</td><td>${esc(ra.talon.barres)}</td><td>${esc(ra.talon.repartition)}</td></tr>
+        <tr><td>Patin (nappe inf.)</td><td>${esc(ra.patin.barres)}</td><td>${esc(ra.patin.repartition)}</td></tr></table>`;
       out.innerHTML = `<section class="card"><h2 style="margin-top:0">Résultat ${b(x.ok)}</h2>
-        <div class="kpis"><div class="kpi"><b>${fmt(g.B, 2)} m</b>largeur de semelle</div><div class="kpi"><b>${fmt(g.t_base, 2)} m</b>voile en pied</div>
-        <div class="kpi"><b>${fmt(g.h_base, 2)} m</b>semelle</div><div class="kpi"><b>${fmt(q.beton_m3, 1)} m³</b>béton</div><div class="kpi"><b>${fmt(q.acier_kg, 0)} kg</b>acier</div></div>
+        <div class="kpis">${kpis}</div>
         <table><tr><th>Vérification</th><th>Valeur</th><th></th></tr>
         <tr><td>Renversement</td><td>Fs = ${fmt(st.renversement.Fs, 2)} ≥ 1,5</td><td>${b(st.renversement.ok)}</td></tr>
         <tr><td>Glissement</td><td>Fs = ${fmt(st.glissement.Fs, 2)} ≥ 1,5</td><td>${b(st.glissement.ok)}</td></tr>
         <tr><td>Excentricité</td><td>e = ${fmt(st.excentricite.e, 3)} m ≤ ${fmt(st.excentricite.limite, 3)} m</td><td>${b(st.excentricite.ok)}</td></tr>
         <tr><td>Sol</td><td>${fmt(st.sol.q_ref_kPa, 0)} ≤ ${fmt(st.sol.q_adm_kPa, 0)} kPa</td><td>${b(st.sol.ok)}</td></tr></table>
-        <table style="margin-top:8px"><tr><th>Élément</th><th>Aciers principaux</th><th>Répartition</th></tr>
-        <tr><td>Voile (côté terres)</td><td>${esc(ra.voile.barres)}</td><td>${esc(ra.voile.repartition)}</td></tr>
-        <tr><td>Talon (nappe sup.)</td><td>${esc(ra.talon.barres)}</td><td>${esc(ra.talon.repartition)}</td></tr>
-        <tr><td>Patin (nappe inf.)</td><td>${esc(ra.patin.barres)}</td><td>${esc(ra.patin.repartition)}</td></tr></table>
+        ${detail}
         ${x.notes.length ? `<ul class="small warnings">${x.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : ""}
         <div class="actions"><button id="wnote">Note de calcul (HTML)</button><button class="ghost" id="wdxf">Coupe type (DXF)</button></div></section>`;
       const dl = (blob, name) => { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); };
-      document.getElementById("wnote").onclick = () => dl(new Blob([r.note_html], { type: "text/html" }), "note_mur_soutenement.html");
+      const nm = poids ? "mur_poids" : "mur_soutenement";
+      document.getElementById("wnote").onclick = () => dl(new Blob([r.note_html], { type: "text/html" }), `note_${nm}.html`);
       document.getElementById("wdxf").onclick = () => dl(new Blob([Uint8Array.from(atob(r.dxf_base64), (c) => c.charCodeAt(0))],
-        { type: "application/dxf" }), "coupe_mur_soutenement.dxf");
+        { type: "application/dxf" }), `coupe_${nm}.dxf`);
     } catch (er) { out.innerHTML = `<section class="card"><p class="badge ko">${esc(er.message)}</p></section>`; }
   };
 }

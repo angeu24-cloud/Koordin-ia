@@ -174,6 +174,8 @@ def cmd_soutenement(args) -> int:
 
     out = Path(args.sortie)
     out.mkdir(parents=True, exist_ok=True)
+    if args.type == "poids":
+        return _cmd_mur_poids(args, out)
     fe = args.fe or (400.0 if args.norme == "bael" else 500.0)
     code = get_code(args.norme, fc=args.fc, fy=fe, cover=0.05)
     w = RetainingWall(height=args.hauteur, length=args.longueur, surcharge=args.surcharge, slope=args.pente,
@@ -197,6 +199,38 @@ def cmd_soutenement(args) -> int:
         print("•", n)
     print(("Toutes les vérifications sont satisfaites." if res.ok else "ATTENTION : vérifications non satisfaites."))
     print(f"Fichiers : {out / 'note_soutenement.html'}, {out / 'coupe_mur_soutenement.dxf'}, {out / 'soutenement.json'}")
+    return 0 if res.ok else 1
+
+
+def _cmd_mur_poids(args, out: Path) -> int:
+    from dataclasses import asdict
+
+    from .mur_poids import GravityWall, design_gravity, gravity_dxf, gravity_html
+    from .soutenement import Soil
+
+    w = GravityWall(height=args.hauteur, length=args.longueur, material=args.materiau, surcharge=args.surcharge,
+                    slope=args.pente, soil=Soil(gamma=args.gamma, phi=args.phi), sigma_sol=args.sol,
+                    phi_base=args.phi_fondation, fiche=args.fiche, water=args.nappe, top_width=args.largeur_tete,
+                    base_width=args.largeur_pied, footing=not args.sans_semelle,
+                    footing_t=args.semelle or 0.40, f_adm=args.resistance)
+    res = design_gravity(w)
+    (out / "mur_poids.json").write_text(json.dumps(asdict(res), ensure_ascii=False, indent=1), encoding="utf-8")
+    (out / "note_mur_poids.html").write_text(gravity_html(res), encoding="utf-8")
+    gravity_dxf(res, out / "coupe_mur_poids.dxf")
+    g, st = res.geometry, res.stability
+    print(f"Mur poids ({w.material}) H = {w.height:g} m : largeur {g['b0']:.2f} m en tête → {g['B']:.2f} m en pied "
+          f"(fruit {g['fruit'] * 100:.0f} %), semelle {g['semelle_largeur']:.2f} × {g['semelle_ep']:.2f} m")
+    print(f"  Renversement Fs = {st['renversement']['Fs']:.2f} · glissement Fs = {st['glissement']['Fs']:.2f} · "
+          f"e = {st['excentricite']['e']:.3f} m · sol {st['sol']['q_ref_kPa']:.0f} / {st['sol']['q_adm_kPa']:.0f} kPa")
+    base = res.sections[-1]
+    print(f"  Maçonnerie en pied : σmax = {base['sigma_max_kPa']:.0f} kPa ≤ {base['f_adm_kPa']:.0f} kPa, "
+          f"e = {base['e_m']:.3f} m ≤ {base['limite_e']:.3f} m")
+    qt = res.quantities["total"]
+    print(f"  Métré ({w.length:g} ml) : maçonnerie {qt['maconnerie_m3']:.2f} m³, semelle {qt['semelle_beton_m3']:.2f} m³")
+    for n in res.notes:
+        print("•", n)
+    print("Toutes les vérifications sont satisfaites." if res.ok else "ATTENTION : vérifications non satisfaites.")
+    print(f"Fichiers : {out / 'note_mur_poids.html'}, {out / 'coupe_mur_poids.dxf'}, {out / 'mur_poids.json'}")
     return 0 if res.ok else 1
 
 
@@ -768,7 +802,15 @@ def main(argv: list[str] | None = None) -> int:
     gt.add_argument("-o", "--sortie", default=".", help="Dossier où écrire geotech.json")
     gt.set_defaults(func=cmd_geotech)
 
-    so = sub.add_parser("soutenement", help="Dimensionner un mur de soutènement en béton armé (mur cantilever)")
+    so = sub.add_parser("soutenement", help="Dimensionner un mur de soutènement : cantilever en béton armé ou mur poids en maçonnerie")
+    so.add_argument("--type", choices=["cantilever", "poids"], default="cantilever",
+                    help="cantilever (béton armé, défaut) ou poids (maçonnerie)")
+    so.add_argument("--materiau", choices=["moellons", "agglos", "beton_cyclopeen"], default="moellons",
+                    help="Mur poids : matériau de la maçonnerie")
+    so.add_argument("--largeur-tete", type=float, help="Mur poids : largeur en tête (m), défaut max(0,40 ; H/8)")
+    so.add_argument("--largeur-pied", type=float, help="Mur poids : largeur en pied (m), défaut calculée")
+    so.add_argument("--sans-semelle", action="store_true", help="Mur poids : sans semelle en béton")
+    so.add_argument("--resistance", type=float, help="Mur poids : compression admissible de la maçonnerie (MPa)")
     so.add_argument("--hauteur", type=float, required=True, help="Hauteur de terres retenues au-dessus de la semelle (m)")
     so.add_argument("--longueur", type=float, default=1.0, help="Longueur du mur pour le métré (m)")
     so.add_argument("--surcharge", type=float, default=10.0, help="Surcharge sur le terre-plein (kN/m², défaut 10)")

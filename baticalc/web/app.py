@@ -493,6 +493,27 @@ def create_app(data_dir: str | Path | None = None, sync_jobs: bool | None = None
         def num(k, default=None):
             v = body.get(k, default)
             return None if v in (None, "") else float(v)
+        if body.get("type") == "poids":
+            from ..mur_poids import GravityWall, design_gravity, gravity_dxf, gravity_html
+
+            try:
+                w = GravityWall(height=num("hauteur"), length=num("longueur", 1.0), material=body.get("materiau") or "moellons",
+                                surcharge=num("surcharge", 10.0), slope=num("pente", 0.0),
+                                soil=Soil(gamma=num("gamma", 18.0), phi=num("phi", 30.0)), sigma_sol=num("sol", 0.15),
+                                phi_base=num("phi_fondation"), fiche=num("fiche", 0.0), water=num("nappe"),
+                                top_width=num("largeur_tete"), base_width=num("largeur_pied"),
+                                footing=str(body.get("semelle_beton", "1")) not in ("0", "false", "non"),
+                                footing_t=num("semelle") or 0.40, f_adm=num("resistance"))
+                if not w.height or not 0.5 <= w.height <= 8:
+                    raise ValueError("Hauteur de terres entre 0,50 et 8 m pour un mur poids.")
+                res = design_gravity(w)
+            except (TypeError, ValueError) as exc:
+                raise HTTPException(400, f"Données non valides : {exc}") from exc
+            with tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "coupe.dxf"
+                gravity_dxf(res, path)
+                dxf = base64.b64encode(path.read_bytes()).decode()
+            return {"type": "poids", "resultat": asdict(res), "note_html": gravity_html(res), "dxf_base64": dxf}
         try:
             norme = body.get("norme") or "bael"
             code = get_code(norme, fc=num("fc", 25.0), fy=num("fe", 400.0 if norme == "bael" else 500.0), cover=0.05)
@@ -510,7 +531,7 @@ def create_app(data_dir: str | Path | None = None, sync_jobs: bool | None = None
             path = Path(tmp) / "coupe.dxf"
             wall_dxf(res, path)
             dxf = base64.b64encode(path.read_bytes()).decode()
-        return {"resultat": asdict(res), "note_html": wall_html(res, code), "dxf_base64": dxf}
+        return {"type": "cantilever", "resultat": asdict(res), "note_html": wall_html(res, code), "dxf_base64": dxf}
 
     @app.post("/api/projets/{pid}/geotech")
     async def upload_report(pid: int, fichier: UploadFile = File(...), user: dict = Depends(current_user)):
