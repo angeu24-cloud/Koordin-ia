@@ -130,6 +130,7 @@ async function viewWall() {
     ["fiche", "Terre devant le mur (m)", 0], ["epaisseur_tete", "Voile en tête (m)", 0.2],
     ["epaisseur_pied", "Voile en pied (m, vide = calculé)", ""], ["semelle", "Épaisseur de semelle (m, vide = calculée)", ""],
     ["patin", "Patin (m, vide = calculé)", ""], ["talon", "Talon (m, vide = calculé)", ""],
+    ["beche", "Bêche sous le voile : hauteur (m, vide = sans)", ""], ["largeur_beche", "Largeur de bêche (m)", 0.3],
     ["largeur_tete", "Mur poids : largeur en tête (m, vide = calculée)", ""],
     ["largeur_pied", "Mur poids : largeur en pied (m, vide = calculée)", ""],
     ["resistance", "Mur poids : compression admissible (MPa, vide = selon matériau)", ""]];
@@ -170,7 +171,8 @@ async function viewWall() {
         : `<table style="margin-top:8px"><tr><th>Élément</th><th>Aciers principaux</th><th>Répartition</th></tr>
         <tr><td>Voile (côté terres)</td><td>${esc(ra.voile.barres)}</td><td>${esc(ra.voile.repartition)}</td></tr>
         <tr><td>Talon (nappe sup.)</td><td>${esc(ra.talon.barres)}</td><td>${esc(ra.talon.repartition)}</td></tr>
-        <tr><td>Patin (nappe inf.)</td><td>${esc(ra.patin.barres)}</td><td>${esc(ra.patin.repartition)}</td></tr></table>`;
+        <tr><td>Patin (nappe inf.)</td><td>${esc(ra.patin.barres)}</td><td>${esc(ra.patin.repartition)}</td></tr>
+        ${ra.beche ? `<tr><td>Bêche</td><td>${esc(ra.beche.barres)}</td><td>${esc(ra.beche.repartition)}</td></tr>` : ""}</table>`;
       out.innerHTML = `<section class="card"><h2 style="margin-top:0">Résultat ${b(x.ok)}</h2>
         <div class="kpis">${kpis}</div>
         <table><tr><th>Vérification</th><th>Valeur</th><th></th></tr>
@@ -180,12 +182,15 @@ async function viewWall() {
         <tr><td>Sol</td><td>${fmt(st.sol.q_ref_kPa, 0)} ≤ ${fmt(st.sol.q_adm_kPa, 0)} kPa</td><td>${b(st.sol.ok)}</td></tr></table>
         ${detail}
         ${x.notes.length ? `<ul class="small warnings">${x.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : ""}
-        <div class="actions"><button id="wnote">Note de calcul (HTML)</button><button class="ghost" id="wdxf">Coupe type (DXF)</button></div></section>`;
+        <div class="actions"><button id="wnote">Note de calcul (HTML)</button><button class="ghost" id="wdxf">Coupe type (DXF)</button>
+        ${r.plans_pdf_base64 ? '<button class="ghost" id="wplans">Plans d\'exécution (PDF)</button>' : ""}</div></section>`;
       const dl = (blob, name) => { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); };
       const nm = poids ? "mur_poids" : "mur_soutenement";
       document.getElementById("wnote").onclick = () => dl(new Blob([r.note_html], { type: "text/html" }), `note_${nm}.html`);
       document.getElementById("wdxf").onclick = () => dl(new Blob([Uint8Array.from(atob(r.dxf_base64), (c) => c.charCodeAt(0))],
         { type: "application/dxf" }), `coupe_${nm}.dxf`);
+      if (r.plans_pdf_base64) document.getElementById("wplans").onclick = () => dl(new Blob([Uint8Array.from(atob(r.plans_pdf_base64),
+        (c) => c.charCodeAt(0))], { type: "application/pdf" }), "plans_mur_soutenement.pdf");
     } catch (er) { out.innerHTML = `<section class="card"><p class="badge ko">${esc(er.message)}</p></section>`; }
   };
 }

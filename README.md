@@ -439,6 +439,12 @@ baticalc soutenement --hauteur 3.5 --pente 15 --nappe 1.2 --norme ec2 -o mur_clo
 - Dans l'application : accueil › **Outils de calcul › Mur de soutènement** (formulaire, résultats,
   téléchargement de la note et de la coupe). API : `POST /api/outils/soutenement`.
 
+- Bêche sous le voile (`--beche 0.40`, `--largeur-beche 0.30`) : butée devant la bêche comptée à 50 %,
+  ferraillage (cadres en U, filants) et métré.
+- Plans d'exécution A3 (`--plans "Mur 1:21,Mur 2:25" --projet "..."`) : PDF de 3 planches + DXF —
+  vue en plan et élévations (joints de dilatation ≤ 10 m, barbacanes), coupe de coffrage cotée avec niveaux,
+  drainage et détails (joint, barbacane), coupe de ferraillage repérée et nomenclature des aciers par mur.
+
 ### Murs poids en maçonnerie
 
 ```bash

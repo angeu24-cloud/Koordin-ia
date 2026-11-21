@@ -521,17 +521,24 @@ def create_app(data_dir: str | Path | None = None, sync_jobs: bool | None = None
                               slope=num("pente", 0.0), soil=Soil(gamma=num("gamma", 18.0), phi=num("phi", 30.0)),
                               sigma_sol=num("sol", 0.15), phi_base=num("phi_fondation"), fiche=num("fiche", 0.0),
                               water=num("nappe"), t_top=num("epaisseur_tete", 0.20), t_base=num("epaisseur_pied"),
-                              h_base=num("semelle"), toe=num("patin"), heel=num("talon"))
+                              h_base=num("semelle"), toe=num("patin"), heel=num("talon"), key_depth=num("beche") or 0.0,
+                              key_width=num("largeur_beche") or 0.30)
             if not w.height or not 0.5 <= w.height <= 12:
                 raise ValueError("Hauteur de terres entre 0,50 et 12 m.")
             res = design_wall(w, code)
         except (TypeError, ValueError) as exc:
             raise HTTPException(400, f"Données non valides : {exc}") from exc
+        from ..plans_soutenement import wall_plans
+
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "coupe.dxf"
             wall_dxf(res, path)
             dxf = base64.b64encode(path.read_bytes()).decode()
-        return {"type": "cantilever", "resultat": asdict(res), "note_html": wall_html(res, code), "dxf_base64": dxf}
+            pl = wall_plans(res, Path(tmp) / "plans", [("Mur", w.length)], {"projet": body.get("projet") or "Mur de soutènement"})
+            plans = base64.b64encode(Path(pl["pdf"]).read_bytes()).decode()
+        nomen = {k: v for k, v in pl["nomenclature"].items() if k != "rows"}
+        return {"type": "cantilever", "resultat": asdict(res), "note_html": wall_html(res, code), "dxf_base64": dxf,
+                "plans_pdf_base64": plans, "nomenclature": nomen}
 
     @app.post("/api/projets/{pid}/geotech")
     async def upload_report(pid: int, fichier: UploadFile = File(...), user: dict = Depends(current_user)):

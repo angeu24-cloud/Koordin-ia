@@ -44,6 +44,8 @@ class RetainingWall:
     toe: float | None = None          # longueur du patin (devant)
     heel: float | None = None         # longueur du talon (derrière)
     cover: float = 0.05               # enrobage (parement au contact des terres)
+    key_depth: float = 0.0            # bêche sous le voile : hauteur sous la semelle (m), 0 = sans bêche
+    key_width: float = 0.30           # largeur de la bêche (m)
 
 
 @dataclass
@@ -122,16 +124,19 @@ def _actions(w: RetainingWall, g: dict, with_q_on_heel: bool) -> dict:
     x_terre = toe + tb + heel / 2
     W_toe = s.gamma * toe * max(0.0, w.fiche)
     W_q = w.surcharge * heel if with_q_on_heel else 0.0
+    kd, kw = max(0.0, w.key_depth), w.key_width
+    W_key = GAMMA_BA * kw * kd                  # bêche sous le voile, parement arrière aligné sur le voile
+    x_key = toe + tb - kw / 2
     U = 0.0
     if zw is not None:                          # sous-pression (diagramme triangulaire, drainage nul côté aval)
         U = 0.5 * GAMMA_W * (Hv - zw) * B
-    V = W_sem + W_v1 + W_v2 + W_terre + W_toe + W_q + PgV + PqV - U
+    V = W_sem + W_v1 + W_v2 + W_terre + W_toe + W_q + W_key + PgV + PqV - U
     Ms = (W_sem * B / 2 + W_v1 * x_v1 + W_v2 * x_v2 + W_terre * x_terre + W_toe * toe / 2
-          + W_q * x_terre + (PgV + PqV) * B)
+          + W_q * x_terre + W_key * x_key + (PgV + PqV) * B)
     Mr = PgH * yg + PqH * yq + Pw * yw + U * B * 2 / 3
     return {"B": B, "Hv": Hv, "ka": ka, "PgH": PgH, "PqH": PqH, "Pw": Pw, "yg": yg, "yq": yq, "yw": yw,
             "W": {"semelle": W_sem, "voile": W_v1 + W_v2, "terres_talon": W_terre, "terres_patin": W_toe,
-                  "surcharge_talon": W_q}, "PV": PgV + PqV, "U": U, "V": V, "Ms": Ms, "Mr": Mr,
+                  "surcharge_talon": W_q, "beche": W_key}, "PV": PgV + PqV, "U": U, "V": V, "Ms": Ms, "Mr": Mr,
             "H_total": PgH + PqH + Pw}
 
 
@@ -140,7 +145,8 @@ def stability(w: RetainingWall, g: dict) -> dict:
     # renversement et glissement : surcharge sur le talon négligée (défavorable de ne pas la compter)
     a = _actions(w, g, with_q_on_heel=False)
     F_r = a["Ms"] / a["Mr"] if a["Mr"] else 99.0
-    F_g = a["V"] * math.tan(math.radians(phi_b)) / a["H_total"] if a["H_total"] else 99.0
+    Bp = key_passive(w, g)["mobilisee"]
+    F_g = (a["V"] * math.tan(math.radians(phi_b)) + Bp) / a["H_total"] if a["H_total"] else 99.0
     # contraintes sur le sol : surcharge sur le talon comptée
     b = _actions(w, g, with_q_on_heel=True)
     B = b["B"]
@@ -157,11 +163,31 @@ def stability(w: RetainingWall, g: dict) -> dict:
         q_ref = 0.75 * qmax
     adm = w.sigma_sol * 1000
     return {"renversement": {"Fs": round(F_r, 2), "min": 1.5, "ok": F_r >= 1.5},
-            "glissement": {"Fs": round(F_g, 2), "min": 1.5, "ok": F_g >= 1.5, "phi_base": phi_b},
+            "glissement": {"Fs": round(F_g, 2), "min": 1.5, "ok": F_g >= 1.5, "phi_base": phi_b,
+                           "butee_beche_kN": round(Bp, 1)},
             "excentricite": {"e": round(e, 3), "limite": round(B / 6, 3), "ok": abs(e) <= B / 6},
             "sol": {"qmax_kPa": round(qmax, 1), "qmin_kPa": round(qmin, 1), "q_ref_kPa": round(q_ref, 1),
                     "q_adm_kPa": round(adm, 1), "ok": q_ref <= adm and qmax <= 1.33 * adm},
             "_actions": a, "_actions_sol": b, "_e": e, "_qmax": qmax, "_qmin": qmin}
+
+
+def key_passive(w: RetainingWall, g: dict) -> dict:
+    """Butée devant la bêche et la semelle (Rankine, sol de fondation), comptée à 50 % (déplacement limité).
+
+    Profondeurs mesurées depuis le terrain côté aval : de la fiche (terre devant le patin) jusqu'au pied
+    de la bêche. Le surcroît de contrainte apporté par le patin est négligé (sécurité).
+    """
+    kd = max(0.0, w.key_depth)
+    if kd <= 0:
+        return {"Kp": 0.0, "totale": 0.0, "mobilisee": 0.0, "beche": 0.0, "z1": 0.0, "z2": 0.0}
+    phi_b = w.phi_base if w.phi_base is not None else w.soil.phi
+    kp = 1 / ka_rankine(phi_b)
+    gam = w.soil.gamma
+    z2 = max(0.0, w.fiche) + g["h_base"] + kd
+    z1 = max(0.0, w.fiche) + g["h_base"]
+    Pp = 0.5 * kp * gam * z2 ** 2
+    Pk = 0.5 * kp * gam * (z2 ** 2 - z1 ** 2)           # part reprise par la bêche seule
+    return {"Kp": kp, "totale": Pp, "mobilisee": 0.5 * Pp, "beche": Pk, "z1": z1, "z2": z2}
 
 
 def size_base(w: RetainingWall, notes: list[str]) -> dict:
@@ -272,7 +298,21 @@ def reinforcement(w: RetainingWall, g: dict, code, st: dict) -> dict:
     for part in (voile, patin, talon):
         part["repartition"], part["As_rep"] = rep(part)
     voile["face_avant"] = "HA8 e=20 cm (vertical et horizontal)"
-    return {"voile": voile, "patin": patin, "talon": talon, "q_elu_kPa": [round(qmax, 1), round(qmin, 1)]}
+    out = {"voile": voile, "patin": patin, "talon": talon, "q_elu_kPa": [round(qmax, 1), round(qmin, 1)]}
+    if w.key_depth > 0:                         # bêche : console encastrée sous la semelle, butée totale × 1,35
+        kp = key_passive(w, g)
+        z1, z2, gam = kp["z1"], kp["z2"], s.gamma
+        p1, p2 = kp["Kp"] * gam * z1, kp["Kp"] * gam * z2
+        kd = w.key_depth
+        Vk = 1.35 * kp["beche"]
+        Mk = 1.35 * (p1 * kd ** 2 / 2 + (p2 - p1) * kd ** 2 / 6)
+        bk = _section(code, Mk, Vk, w.key_width, w.cover)
+        bmin = bar_area(10) / 0.20
+        if bk["As_reel"] < bmin:
+            bk.update(barres="HA10 e=20 cm", d_mm=10, e_m=0.20, As_reel=round(bmin, 2))
+        bk["repartition"], bk["As_rep"] = "4 HA10 filants", round(4 * bar_area(10), 2)
+        out["beche"] = bk
+    return out
 
 
 def quantities(w: RetainingWall, g: dict, ra: dict) -> dict:
@@ -291,15 +331,18 @@ def quantities(w: RetainingWall, g: dict, ra: dict) -> dict:
         return main + rep
     steel = 1.15 * (kg(ra["voile"], H + 0.6 * hb + 0.5) + kg(ra["talon"], heel + tb) + kg(ra["patin"], toe + tb)
                     + 2 * (1 / 0.20) * bar_mass(8) * H)                  # face avant HA8 e = 20 cm
-    per_ml = {"beton_m3": v_voile + v_sem, "beton_voile_m3": v_voile, "beton_semelle_m3": v_sem,
+    v_key = max(0.0, w.key_depth) * w.key_width
+    if v_key:
+        steel += 1.15 * ((1 / 0.20) * bar_mass(10) * (2 * (w.key_depth + hb) + w.key_width) + 4 * bar_mass(10))
+    per_ml = {"beton_m3": v_voile + v_sem + v_key, "beton_voile_m3": v_voile, "beton_semelle_m3": v_sem + v_key,
               "beton_proprete_m3": 0.05 * (B + 0.2), "acier_kg": steel,
-              "coffrage_m2": 2 * H + 2 * hb, "fouille_m3": (B + 0.6) * (hb + 0.05 + max(0.0, w.fiche) + 0.3),
+              "coffrage_m2": 2 * H + 2 * hb, "fouille_m3": (B + 0.6) * (hb + 0.05 + max(0.0, w.fiche) + 0.3) + v_key,
               "remblai_drainant_m3": 0.40 * H, "drain_ml": 1.0, "geotextile_m2": H + 0.6,
               "barbacanes_u": 0.5, "enduit_bitumineux_m2": H + hb}
     total = {k: round(v * L, 2) for k, v in per_ml.items()}
     total["barbacanes_u"] = math.ceil(per_ml["barbacanes_u"] * L)
     return {"par_ml": {k: round(v, 3) for k, v in per_ml.items()}, "total": total, "longueur": L,
-            "ratio_acier_kg_m3": round(steel / (v_voile + v_sem), 0)}
+            "ratio_acier_kg_m3": round(steel / (v_voile + v_sem + v_key), 0)}
 
 
 def design_wall(w: RetainingWall, code) -> WallResult:
@@ -311,7 +354,7 @@ def design_wall(w: RetainingWall, code) -> WallResult:
     g = size_base(w, notes)
     st = stability(w, g)
     ra = reinforcement(w, g, code, st)
-    for k in ("voile", "patin", "talon"):
+    for k in [k for k in ("voile", "patin", "talon", "beche") if k in ra]:
         if not ra[k]["ok_cisaillement"]:
             notes.append(f"{k.capitalize()} : τu = {ra[k]['tau_MPa']} MPa > {ra[k]['tau_lim_MPa']} MPa : épaissir la section.")
         notes += [f"{k.capitalize()} : {n}" for n in ra[k]["notes"]]
@@ -323,7 +366,7 @@ def design_wall(w: RetainingWall, code) -> WallResult:
                      "(hypothèse du calcul sans pression d'eau).")
     q = quantities(w, g, ra)
     ok = all(st[k]["ok"] for k in ("renversement", "glissement", "excentricite", "sol")) and \
-        all(ra[k]["ok_cisaillement"] for k in ("voile", "patin", "talon"))
+        all(ra[k]["ok_cisaillement"] for k in ("voile", "patin", "talon", "beche") if k in ra)
     a = st["_actions"]
     forces = {"poussee_terres_kN_ml": round(a["PgH"], 1), "poussee_surcharge_kN_ml": round(a["PqH"], 1),
               "poussee_eau_kN_ml": round(a["Pw"], 1), "sous_pression_kN_ml": round(a["U"], 1),
@@ -331,7 +374,11 @@ def design_wall(w: RetainingWall, code) -> WallResult:
               "V_kN_ml": round(a["V"], 1), "M_stabilisant_kNm_ml": round(a["Ms"], 1),
               "M_renversant_kNm_ml": round(a["Mr"], 1)}
     stab = {k: v for k, v in st.items() if not k.startswith("_")}
-    geom = dict(g, B=round(g["toe"] + g["t_base"] + g["heel"], 2), hauteur_totale=round(w.height + g["h_base"], 2))
+    geom = dict(g, B=round(g["toe"] + g["t_base"] + g["heel"], 2), hauteur_totale=round(w.height + g["h_base"], 2),
+                key_depth=round(max(0.0, w.key_depth), 2), key_width=round(w.key_width, 2) if w.key_depth > 0 else 0.0)
+    if w.key_depth > 0:
+        notes.append(f"Bêche {w.key_width * 100:.0f} × {w.key_depth * 100:.0f} cm sous le voile, coulée à pleine fouille "
+                     f"contre le sol en place : butée comptée à 50 % ({st['glissement']['butee_beche_kN']} kN/ml).")
     return WallResult(asdict(w), geom, round(a["ka"], 3), forces, stab, ra, q, ok, notes)
 
 
@@ -348,9 +395,15 @@ def wall_dxf(res: WallResult, path) -> None:
     m = doc.modelspace()
     toe, tb, tt, heel, hb, H = g["toe"], g["t_base"], g["t_top"], g["heel"], g["h_base"], w["height"]
     B = toe + tb + heel
-    m.add_lwpolyline([(0, 0), (B, 0), (B, hb), (toe + tb, hb), (toe + tb, hb + H), (toe + tb - tt, hb + H),
+    kd, kw = g.get("key_depth", 0.0), g.get("key_width", 0.0)
+    xk = toe + tb
+    bottom = [(xk - kw, 0), (xk - kw, -kd), (xk, -kd), (xk, 0)] if kd > 0 else []
+    m.add_lwpolyline([(0, 0), *bottom, (B, 0), (B, hb), (toe + tb, hb), (toe + tb, hb + H), (toe + tb - tt, hb + H),
                       (toe, hb), (0, hb)], close=True, dxfattribs={"layer": "BETON"})
     m.add_lwpolyline([(-0.1, -0.05), (B + 0.1, -0.05)], dxfattribs={"layer": "BETON"})
+    if kd > 0:
+        m.add_linear_dim(base=(xk + 0.25, 0), p1=(xk, 0), p2=(xk, -kd), angle=90, dxfattribs={"layer": "COTES"},
+                         override={"dimtxt": 0.07, "dimasz": 0.05, "dimdec": 2, "dimzin": 8}).render()
     m.add_line((toe + tb, hb + H), (B + 1.5, hb + H + 1.5 * math.tan(math.radians(w["slope"]))), dxfattribs={"layer": "TERRE"})
     if w["fiche"] > 0:
         m.add_line((-1.0, hb + w["fiche"]), (toe, hb + w["fiche"]), dxfattribs={"layer": "TERRE"})
@@ -402,10 +455,14 @@ def wall_html(res: WallResult, code) -> str:
     geo = "".join(f"<tr><td>{k}</td><td>{f(v)} m</td></tr>" for k, v in (
         ("Épaisseur du voile en tête", g["t_top"]), ("Épaisseur du voile en pied", g["t_base"]),
         ("Épaisseur de la semelle", g["h_base"]), ("Patin (avant)", g["toe"]), ("Talon (arrière)", g["heel"]),
-        ("Largeur de la semelle B", g["B"]), ("Hauteur totale", g["hauteur_totale"])))
+        ("Largeur de la semelle B", g["B"]), ("Hauteur totale", g["hauteur_totale"]))
+        + ((("Bêche sous le voile : largeur", g["key_width"]), ("Bêche : hauteur sous la semelle", g["key_depth"]))
+           if g.get("key_depth") else ()))
     stab = (f"<tr><td>Renversement</td><td>Fs = {f(st['renversement']['Fs'])} ≥ 1,5</td><td>{ok(st['renversement']['ok'])}</td></tr>"
-            f"<tr><td>Glissement (φ base = {f(st['glissement']['phi_base'], 0)}°, butée négligée)</td>"
-            f"<td>Fs = {f(st['glissement']['Fs'])} ≥ 1,5</td><td>{ok(st['glissement']['ok'])}</td></tr>"
+            f"<tr><td>Glissement (φ base = {f(st['glissement']['phi_base'], 0)}°, "
+            + (f"butée devant la bêche comptée à 50 % : {f(st['glissement']['butee_beche_kN'], 1)} kN/ml)</td>"
+               if st['glissement'].get('butee_beche_kN') else "butée négligée)</td>")
+            + f"<td>Fs = {f(st['glissement']['Fs'])} ≥ 1,5</td><td>{ok(st['glissement']['ok'])}</td></tr>"
             f"<tr><td>Excentricité de la résultante</td><td>e = {f(st['excentricite']['e'], 3)} m ≤ B/6 = "
             f"{f(st['excentricite']['limite'], 3)} m</td><td>{ok(st['excentricite']['ok'])}</td></tr>"
             f"<tr><td>Contrainte sur le sol</td><td>q réf = (3 qmax + qmin)/4 = {f(st['sol']['q_ref_kPa'], 1)} kPa ≤ "
@@ -415,7 +472,8 @@ def wall_html(res: WallResult, code) -> str:
                  f"<td>{p['barres']}</td><td>{p['repartition']}</td><td>{f(p['tau_MPa'], 3)} ≤ {f(p['tau_lim_MPa'], 3)} "
                  f"{ok(p['ok_cisaillement'])}</td></tr>" for n, p in (("Voile (pied, côté terres)", ra["voile"]),
                                                                        ("Talon (nappe supérieure)", ra["talon"]),
-                                                                       ("Patin (nappe inférieure)", ra["patin"])))
+                                                                       ("Patin (nappe inférieure)", ra["patin"]))
+                 + ((("Bêche (face aval)", ra["beche"]),) if "beche" in ra else ()))
     qt = q["total"]
     met = "".join(f"<tr><td>{k}</td><td>{v}</td></tr>" for k, v in (
         ("Béton armé dosé à 350 kg/m³", f"{f(qt['beton_m3'])} m³ (voile {f(qt['beton_voile_m3'])}, semelle {f(qt['beton_semelle_m3'])})"),

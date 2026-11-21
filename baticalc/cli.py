@@ -181,7 +181,8 @@ def cmd_soutenement(args) -> int:
     w = RetainingWall(height=args.hauteur, length=args.longueur, surcharge=args.surcharge, slope=args.pente,
                       soil=Soil(gamma=args.gamma, phi=args.phi), sigma_sol=args.sol, phi_base=args.phi_fondation,
                       fiche=args.fiche, water=args.nappe, t_top=args.epaisseur_tete, t_base=args.epaisseur_pied,
-                      h_base=args.semelle, toe=args.patin, heel=args.talon)
+                      h_base=args.semelle, toe=args.patin, heel=args.talon, key_depth=args.beche or 0.0,
+                      key_width=args.largeur_beche)
     res = design_wall(w, code)
     (out / "soutenement.json").write_text(json.dumps(asdict(res), ensure_ascii=False, indent=1), encoding="utf-8")
     (out / "note_soutenement.html").write_text(wall_html(res, code), encoding="utf-8")
@@ -199,6 +200,17 @@ def cmd_soutenement(args) -> int:
         print("•", n)
     print(("Toutes les vérifications sont satisfaites." if res.ok else "ATTENTION : vérifications non satisfaites."))
     print(f"Fichiers : {out / 'note_soutenement.html'}, {out / 'coupe_mur_soutenement.dxf'}, {out / 'soutenement.json'}")
+    if args.plans is not None:
+        from .plans_soutenement import wall_plans
+
+        walls = []
+        for part in [p_ for p_ in (args.plans or "").split(",") if p_.strip()]:
+            name, _, L = part.rpartition(":")
+            walls.append((name.strip() or f"Mur {len(walls) + 1}", float(L.replace(",", "."))))
+        pl = wall_plans(res, out / "plans", walls or [("Mur", w.length)], {"projet": args.projet} if args.projet else None)
+        nm = pl["nomenclature"]
+        print(f"Plans : {pl['pdf']} (+ 3 planches DXF) — acier selon nomenclature {nm['total_kg']:.0f} kg "
+              + "(" + ", ".join(f"{n} : {kg:.0f} kg" for (n, _), kg in zip(nm["walls"], nm["par_mur_kg"])) + ")")
     return 0 if res.ok else 1
 
 
@@ -826,6 +838,11 @@ def main(argv: list[str] | None = None) -> int:
     so.add_argument("--semelle", type=float, help="Épaisseur de la semelle (m)")
     so.add_argument("--patin", type=float, help="Longueur du patin (m)")
     so.add_argument("--talon", type=float, help="Longueur du talon (m)")
+    so.add_argument("--beche", type=float, help="Bêche sous le voile : hauteur sous la semelle (m)")
+    so.add_argument("--largeur-beche", type=float, default=0.30, help="Largeur de la bêche (m), défaut 0,30")
+    so.add_argument("--plans", nargs="?", const="", help="Plans d'exécution (PDF + DXF) ; murs « Nom:longueur,... », "
+                    "ex. \"Mur 1:21,Mur 2:25\" (défaut : un mur de --longueur)")
+    so.add_argument("--projet", help="Nom du projet pour le cartouche des plans")
     so.add_argument("--norme", choices=["bael", "ec2"], default="bael")
     so.add_argument("--fc", type=float, default=25.0)
     so.add_argument("--fe", type=float, help="Limite élastique des aciers (MPa), défaut 400 (BAEL) / 500 (EC2)")

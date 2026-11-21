@@ -125,3 +125,42 @@ def test_gravity_outputs_cli_and_web(tmp_path):
     c.post("/api/compte/inscription", json={"email": "a@b.ci", "nom": "A", "mot_de_passe": "motdepasse1"})
     j = c.post("/api/outils/soutenement", json={"type": "poids", "hauteur": "2", "materiau": "moellons", "semelle": "", "talon": "", "nappe": ""}).json()
     assert j["type"] == "poids" and j["resultat"]["ok"] and j["dxf_base64"]
+
+
+# ------------------------------------------------------------------ bêche et plans d'exécution
+def test_key_improves_sliding_and_adds_concrete():
+    c = get_code("bael", cover=0.05)
+    base = dict(height=3.0, sigma_sol=0.25, soil=Soil(gamma=20), toe=0.55, heel=1.50, length=10)
+    a = design_wall(RetainingWall(**base), c)
+    b = design_wall(RetainingWall(**base, key_depth=0.40), c)
+    assert b.stability["glissement"]["Fs"] > a.stability["glissement"]["Fs"] + 0.1
+    assert b.stability["glissement"]["butee_beche_kN"] > 0 and "beche" in b.reinforcement
+    assert b.quantities["total"]["beton_m3"] == pytest.approx(a.quantities["total"]["beton_m3"] + 10 * 0.12, rel=1e-3)
+    assert b.geometry["key_depth"] == 0.4 and "Bêche" in wall_html(b, c)
+
+
+def test_wall_plans_and_schedule(tmp_path):
+    import pymupdf
+
+    from baticalc.plans_soutenement import bar_schedule, segments, wall_plans
+
+    assert segments(21) == [7.0, 7.0, 7.0] and segments(9.5) == [9.5]
+    r = design_wall(RetainingWall(height=3.0, sigma_sol=0.25, length=46, key_depth=0.4), get_code("bael", cover=0.05))
+    s = bar_schedule(r, [("M1", 21), ("M2", 25)])
+    rep1 = next(x for x in s["rows"] if x["rep"] == 1)
+    assert rep1["nb"][0] == 3 * (int((7.0 - 0.10) / rep1["e"] + 1e-9) + 1)
+    assert 0.8 < s["total_kg"] / r.quantities["total"]["acier_kg"] < 1.25
+    out = wall_plans(r, tmp_path, [("M1", 21), ("M2", 25)], {"projet": "Essai"})
+    assert len(out["dxf"]) == 3 and pymupdf.open(out["pdf"]).page_count == 3
+    import ezdxf
+
+    txt = " ".join(e.dxf.text for e in ezdxf.readfile(out["dxf"][2]).modelspace().query("TEXT"))
+    assert "NOMENCLATURE" in txt and "Bêche" in txt
+
+
+def test_cli_key_and_plans(tmp_path):
+    from baticalc.cli import main
+
+    rc = main(["soutenement", "--hauteur", "3", "--sol", "0.25", "--beche", "0.4", "--plans", "Mur A:12,Mur B:8",
+               "--projet", "Essai", "-o", str(tmp_path)])
+    assert rc == 0 and (tmp_path / "plans" / "plans_mur_soutenement.pdf").exists()
