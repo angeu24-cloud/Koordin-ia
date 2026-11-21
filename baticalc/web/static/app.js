@@ -45,6 +45,7 @@ async function route() {
   if (state.user) document.getElementById("username").textContent = state.user.nom;
   const h = location.hash || "#/";
   if (!state.user) return viewAuth(h.includes("inscription") ? "inscription" : "connexion");
+  if (h.startsWith("#/outils/soutenement")) return viewWall();
   const m = h.match(/^#\/projet\/(\d+)(?:\/(\w+))?/);
   if (m) return viewProject(Number(m[1]), m[2] || state.tab || "plan");
   return viewProjects();
@@ -97,6 +98,7 @@ async function viewProjects() {
       <input id="pname" placeholder="Nom du nouveau projet (ex. Immeuble R+3 Cocody)" style="flex:1;min-width:220px" required>
       <button type="submit">Créer le projet</button>
     </form>
+    <div class="small" style="margin-top:10px">Outils de calcul : <a href="#/outils/soutenement">Mur de soutènement</a></div>
   </section>
   <section class="grid">
     ${list.length ? list.map((p) => `
@@ -117,6 +119,55 @@ async function viewProjects() {
     el.onclick = open;
     el.onkeydown = (e) => { if (e.key === "Enter") open(); };
   });
+}
+
+// ------------------------------------------------------------------ outil : mur de soutènement
+async function viewWall() {
+  const F = [["hauteur", "Hauteur de terres retenues (m)", 3], ["longueur", "Longueur du mur (m)", 10],
+    ["surcharge", "Surcharge sur le terre-plein (kN/m²)", 10], ["pente", "Pente du terre-plein (°)", 0],
+    ["gamma", "Poids volumique du remblai (kN/m³)", 18], ["phi", "Frottement du remblai φ (°)", 30],
+    ["sol", "Contrainte admissible du sol (MPa)", 0.15], ["nappe", "Nappe sous le haut du remblai (m, vide = drainé)", ""],
+    ["fiche", "Terre devant le mur (m)", 0], ["epaisseur_tete", "Voile en tête (m)", 0.2],
+    ["epaisseur_pied", "Voile en pied (m, vide = calculé)", ""], ["semelle", "Épaisseur de semelle (m, vide = calculée)", ""],
+    ["patin", "Patin (m, vide = calculé)", ""], ["talon", "Talon (m, vide = calculé)", ""]];
+  $app.innerHTML = `<section class="card"><a href="#/" class="small">← Mes projets</a>
+    <h1>Mur de soutènement en béton armé</h1>
+    <p class="small muted">Mur cantilever (T renversé) : poussée de Rankine, stabilité (renversement, glissement, excentricité, sol),
+      ferraillage du voile, du talon et du patin, métré. Les dimensions laissées vides sont calculées.</p>
+    <form id="wf"><div class="row">${F.map(([k, l, v]) => `<div><label>${l}</label><input id="w_${k}" type="number" step="any" value="${v}"></div>`).join("")}
+      <div><label>Règlement</label><select id="w_norme"><option value="bael">BAEL 91</option><option value="ec2">Eurocode 2</option></select></div></div>
+      <div class="actions"><button type="submit">Calculer</button></div></form></section>
+    <section id="wres"></section>`;
+  document.getElementById("wf").onsubmit = async (e) => {
+    e.preventDefault();
+    const body = { norme: w_norme.value };
+    F.forEach(([k]) => { body[k] = document.getElementById("w_" + k).value; });
+    const out = document.getElementById("wres");
+    out.innerHTML = `<div class="spinner"></div>`;
+    try {
+      const r = await api("/api/outils/soutenement", { json: body });
+      const x = r.resultat, g = x.geometry, st = x.stability, ra = x.reinforcement, q = x.quantities.total;
+      const b = (v) => v ? '<span class="badge ok">vérifié</span>' : '<span class="badge ko">non vérifié</span>';
+      out.innerHTML = `<section class="card"><h2 style="margin-top:0">Résultat ${b(x.ok)}</h2>
+        <div class="kpis"><div class="kpi"><b>${fmt(g.B, 2)} m</b>largeur de semelle</div><div class="kpi"><b>${fmt(g.t_base, 2)} m</b>voile en pied</div>
+        <div class="kpi"><b>${fmt(g.h_base, 2)} m</b>semelle</div><div class="kpi"><b>${fmt(q.beton_m3, 1)} m³</b>béton</div><div class="kpi"><b>${fmt(q.acier_kg, 0)} kg</b>acier</div></div>
+        <table><tr><th>Vérification</th><th>Valeur</th><th></th></tr>
+        <tr><td>Renversement</td><td>Fs = ${fmt(st.renversement.Fs, 2)} ≥ 1,5</td><td>${b(st.renversement.ok)}</td></tr>
+        <tr><td>Glissement</td><td>Fs = ${fmt(st.glissement.Fs, 2)} ≥ 1,5</td><td>${b(st.glissement.ok)}</td></tr>
+        <tr><td>Excentricité</td><td>e = ${fmt(st.excentricite.e, 3)} m ≤ ${fmt(st.excentricite.limite, 3)} m</td><td>${b(st.excentricite.ok)}</td></tr>
+        <tr><td>Sol</td><td>${fmt(st.sol.q_ref_kPa, 0)} ≤ ${fmt(st.sol.q_adm_kPa, 0)} kPa</td><td>${b(st.sol.ok)}</td></tr></table>
+        <table style="margin-top:8px"><tr><th>Élément</th><th>Aciers principaux</th><th>Répartition</th></tr>
+        <tr><td>Voile (côté terres)</td><td>${esc(ra.voile.barres)}</td><td>${esc(ra.voile.repartition)}</td></tr>
+        <tr><td>Talon (nappe sup.)</td><td>${esc(ra.talon.barres)}</td><td>${esc(ra.talon.repartition)}</td></tr>
+        <tr><td>Patin (nappe inf.)</td><td>${esc(ra.patin.barres)}</td><td>${esc(ra.patin.repartition)}</td></tr></table>
+        ${x.notes.length ? `<ul class="small warnings">${x.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul>` : ""}
+        <div class="actions"><button id="wnote">Note de calcul (HTML)</button><button class="ghost" id="wdxf">Coupe type (DXF)</button></div></section>`;
+      const dl = (blob, name) => { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); };
+      document.getElementById("wnote").onclick = () => dl(new Blob([r.note_html], { type: "text/html" }), "note_mur_soutenement.html");
+      document.getElementById("wdxf").onclick = () => dl(new Blob([Uint8Array.from(atob(r.dxf_base64), (c) => c.charCodeAt(0))],
+        { type: "application/dxf" }), "coupe_mur_soutenement.dxf");
+    } catch (er) { out.innerHTML = `<section class="card"><p class="badge ko">${esc(er.message)}</p></section>`; }
+  };
 }
 
 // ------------------------------------------------------------------ projet

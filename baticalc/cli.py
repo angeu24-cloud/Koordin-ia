@@ -166,6 +166,40 @@ def apply_config(args, parser: argparse.ArgumentParser, raw: list[str]) -> None:
         args.sortie = str(path.parent / "resultats")
 
 
+def cmd_soutenement(args) -> int:
+    from dataclasses import asdict
+
+    from .codes import get_code
+    from .soutenement import RetainingWall, Soil, design_wall, wall_dxf, wall_html
+
+    out = Path(args.sortie)
+    out.mkdir(parents=True, exist_ok=True)
+    fe = args.fe or (400.0 if args.norme == "bael" else 500.0)
+    code = get_code(args.norme, fc=args.fc, fy=fe, cover=0.05)
+    w = RetainingWall(height=args.hauteur, length=args.longueur, surcharge=args.surcharge, slope=args.pente,
+                      soil=Soil(gamma=args.gamma, phi=args.phi), sigma_sol=args.sol, phi_base=args.phi_fondation,
+                      fiche=args.fiche, water=args.nappe, t_top=args.epaisseur_tete, t_base=args.epaisseur_pied,
+                      h_base=args.semelle, toe=args.patin, heel=args.talon)
+    res = design_wall(w, code)
+    (out / "soutenement.json").write_text(json.dumps(asdict(res), ensure_ascii=False, indent=1), encoding="utf-8")
+    (out / "note_soutenement.html").write_text(wall_html(res, code), encoding="utf-8")
+    wall_dxf(res, out / "coupe_mur_soutenement.dxf")
+    g, st, ra = res.geometry, res.stability, res.reinforcement
+    print(f"Mur cantilever H = {w.height:g} m : semelle B = {g['B']:.2f} m (patin {g['toe']:.2f}, voile {g['t_base']:.2f}, "
+          f"talon {g['heel']:.2f}), semelle ép. {g['h_base']:.2f} m, voile {g['t_top']:.2f} → {g['t_base']:.2f} m")
+    print(f"  Renversement Fs = {st['renversement']['Fs']:.2f} · glissement Fs = {st['glissement']['Fs']:.2f} · "
+          f"e = {st['excentricite']['e']:.3f} m (B/6 = {st['excentricite']['limite']:.3f}) · sol {st['sol']['q_ref_kPa']:.0f} / "
+          f"{st['sol']['q_adm_kPa']:.0f} kPa")
+    print(f"  Voile : {ra['voile']['barres']} · talon : {ra['talon']['barres']} · patin : {ra['patin']['barres']}")
+    qt = res.quantities["total"]
+    print(f"  Métré ({w.length:g} ml) : béton {qt['beton_m3']:.2f} m³, acier {qt['acier_kg']:.0f} kg, coffrage {qt['coffrage_m2']:.1f} m²")
+    for n in res.notes:
+        print("•", n)
+    print(("Toutes les vérifications sont satisfaites." if res.ok else "ATTENTION : vérifications non satisfaites."))
+    print(f"Fichiers : {out / 'note_soutenement.html'}, {out / 'coupe_mur_soutenement.dxf'}, {out / 'soutenement.json'}")
+    return 0 if res.ok else 1
+
+
 def cmd_geotech(args) -> int:
     from .geotech import GeotechData, Value, extract, summary_lines
 
@@ -733,6 +767,28 @@ def main(argv: list[str] | None = None) -> int:
     gt.add_argument("--vierge", action="store_true", help="Créer un geotech.json à remplir à la main")
     gt.add_argument("-o", "--sortie", default=".", help="Dossier où écrire geotech.json")
     gt.set_defaults(func=cmd_geotech)
+
+    so = sub.add_parser("soutenement", help="Dimensionner un mur de soutènement en béton armé (mur cantilever)")
+    so.add_argument("--hauteur", type=float, required=True, help="Hauteur de terres retenues au-dessus de la semelle (m)")
+    so.add_argument("--longueur", type=float, default=1.0, help="Longueur du mur pour le métré (m)")
+    so.add_argument("--surcharge", type=float, default=10.0, help="Surcharge sur le terre-plein (kN/m², défaut 10)")
+    so.add_argument("--pente", type=float, default=0.0, help="Pente du terre-plein (°)")
+    so.add_argument("--gamma", type=float, default=18.0, help="Poids volumique du remblai (kN/m³)")
+    so.add_argument("--phi", type=float, default=30.0, help="Angle de frottement du remblai (°)")
+    so.add_argument("--phi-fondation", type=float, help="Frottement sol / semelle (°), défaut = φ")
+    so.add_argument("--sol", type=float, default=0.15, help="Contrainte admissible du sol de fondation, ELS (MPa)")
+    so.add_argument("--nappe", type=float, help="Profondeur de la nappe sous le haut du remblai (m) ; absent = mur drainé")
+    so.add_argument("--fiche", type=float, default=0.0, help="Hauteur de terre devant le mur au-dessus de la semelle (m)")
+    so.add_argument("--epaisseur-tete", type=float, default=0.20, help="Épaisseur du voile en tête (m)")
+    so.add_argument("--epaisseur-pied", type=float, help="Épaisseur du voile en pied (m) ; défaut : prédimensionnée")
+    so.add_argument("--semelle", type=float, help="Épaisseur de la semelle (m)")
+    so.add_argument("--patin", type=float, help="Longueur du patin (m)")
+    so.add_argument("--talon", type=float, help="Longueur du talon (m)")
+    so.add_argument("--norme", choices=["bael", "ec2"], default="bael")
+    so.add_argument("--fc", type=float, default=25.0)
+    so.add_argument("--fe", type=float, help="Limite élastique des aciers (MPa), défaut 400 (BAEL) / 500 (EC2)")
+    so.add_argument("-o", "--sortie", default="soutenement", help="Dossier de sortie")
+    so.set_defaults(func=cmd_soutenement)
 
     it = sub.add_parser("init", help="Créer le dossier d'un nouveau projet avec son fichier de configuration")
     it.add_argument("dossier", help="Dossier du projet")

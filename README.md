@@ -413,6 +413,32 @@ Lecture des dessins d'architecte (Revit, ArchiCAD, AutoCAD) :
 - titre « PLAN … ETAGE » sans numéro : étage courant ; plusieurs versions d'un même plan : on retient
   celle rangée à côté des autres niveaux.
 
+## Murs de soutènement
+
+Dimensionnement d'un mur cantilever en béton armé (T renversé), par mètre linéaire :
+
+```bash
+baticalc soutenement --hauteur 3 --longueur 25 --surcharge 10 --phi 30 --gamma 18 --sol 0.15
+baticalc soutenement --hauteur 3.5 --pente 15 --nappe 1.2 --norme ec2 -o mur_cloture
+```
+
+- **Poussées** de Rankine sur l'écran fictif passant par l'extrémité du talon (terre-plein incliné
+  `--pente`, surcharge `--surcharge`), nappe derrière le mur (`--nappe` : poussée hydrostatique, terres
+  déjaugées, sous-pression) ; sans nappe, le mur est supposé drainé (barbacanes, drain, remblai drainant).
+- **Stabilité externe** : renversement Fs ≥ 1,5 (surcharge sur le talon négligée), glissement Fs ≥ 1,5
+  (frottement `--phi-fondation`, butée négligée), excentricité e ≤ B/6, contrainte sur le sol
+  (3 qmax + qmin)/4 ≤ σadm et qmax ≤ 1,33 σadm.
+- **Prédimensionnement** : semelle ≈ 0,55 (H + e), patin ≈ B/4, voile en pied ≥ H/12, semelle ≥ H/10,
+  puis talon et patin allongés jusqu'à satisfaire la stabilité. Toute cote peut être imposée
+  (`--epaisseur-tete`, `--epaisseur-pied`, `--semelle`, `--patin`, `--talon`).
+- **Ferraillage** à l'ELU (1,35 G + 1,5 Q) du voile, du talon et du patin (BAEL 91 ou Eurocode 2),
+  barres par mètre (HA10 à HA25, e = 10 à 25 cm), répartition, effort tranchant sans armatures.
+- **Sorties** : note de calcul HTML, coupe type DXF (cotes, repères d'armatures), `soutenement.json`
+  avec le métré (béton, propreté, acier, coffrage, fouilles, remblai drainant, drain, géotextile,
+  barbacanes, enduit bitumineux).
+- Dans l'application : accueil › **Outils de calcul › Mur de soutènement** (formulaire, résultats,
+  téléchargement de la note et de la coupe). API : `POST /api/outils/soutenement`.
+
 ## Plusieurs fichiers de plans
 
 Quand l'architecte livre un fichier par niveau, ainsi que les coupes et les façades :

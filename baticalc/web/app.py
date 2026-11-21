@@ -480,6 +480,38 @@ def create_app(data_dir: str | Path | None = None, sync_jobs: bool | None = None
         store.log(pid, user["id"], "Hypothèses modifiées")
         return cfg
 
+    # ------------------------------------------------------------------ outils de calcul
+    @app.post("/api/outils/soutenement")
+    def tool_retaining_wall(body: dict, user: dict = Depends(current_user)):
+        import base64
+        import tempfile
+        from dataclasses import asdict
+
+        from ..codes import get_code
+        from ..soutenement import RetainingWall, Soil, design_wall, wall_dxf, wall_html
+
+        def num(k, default=None):
+            v = body.get(k, default)
+            return None if v in (None, "") else float(v)
+        try:
+            norme = body.get("norme") or "bael"
+            code = get_code(norme, fc=num("fc", 25.0), fy=num("fe", 400.0 if norme == "bael" else 500.0), cover=0.05)
+            w = RetainingWall(height=num("hauteur"), length=num("longueur", 1.0), surcharge=num("surcharge", 10.0),
+                              slope=num("pente", 0.0), soil=Soil(gamma=num("gamma", 18.0), phi=num("phi", 30.0)),
+                              sigma_sol=num("sol", 0.15), phi_base=num("phi_fondation"), fiche=num("fiche", 0.0),
+                              water=num("nappe"), t_top=num("epaisseur_tete", 0.20), t_base=num("epaisseur_pied"),
+                              h_base=num("semelle"), toe=num("patin"), heel=num("talon"))
+            if not w.height or not 0.5 <= w.height <= 12:
+                raise ValueError("Hauteur de terres entre 0,50 et 12 m.")
+            res = design_wall(w, code)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(400, f"Données non valides : {exc}") from exc
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "coupe.dxf"
+            wall_dxf(res, path)
+            dxf = base64.b64encode(path.read_bytes()).decode()
+        return {"resultat": asdict(res), "note_html": wall_html(res, code), "dxf_base64": dxf}
+
     @app.post("/api/projets/{pid}/geotech")
     async def upload_report(pid: int, fichier: UploadFile = File(...), user: dict = Depends(current_user)):
         from ..geotech import extract
